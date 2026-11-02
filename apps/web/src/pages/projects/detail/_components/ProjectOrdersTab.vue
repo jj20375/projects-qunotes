@@ -11,6 +11,7 @@ import DataTable, { type TableChange } from '@/app/components/DataTable.vue';
 import RemoteSelect, { type RemoteOption } from '@/app/components/RemoteSelect.vue';
 import { dataColumns } from '@/shared/table/data-table';
 import AttachmentList from '@/app/components/AttachmentList.vue';
+import QuotePreviewDrawer from '@/app/components/QuotePreviewDrawer.vue';
 import type { ProjectDetail } from '@/shared/services/business-service';
 import { deleteOrderApi, listOrdersApi, saveOrderApi, type Order } from '@/shared/services/document-service';
 import { searchQuotesApi, type QuoteRow } from '@/shared/services/quote-service';
@@ -41,6 +42,9 @@ const statusLabels: Record<Order['status'], [string, string]> = {
   delivered: ['已交貨', 'green'],
   cancelled: ['已取消', 'default'],
 };
+
+// 選定案報價時可以先看報價內容（明細、金額、條款），不必離開訂單表單。
+const previewQuoteId = ref<string | null>(null);
 
 const formOpen = ref(false);
 const form = reactive<Partial<Order> & { date?: Dayjs }>({});
@@ -124,7 +128,7 @@ const columns = [
     <template #cell="{ columnId, record }">
       <template v-if="columnId === 'amount' || columnId === 'total'">{{ formatMoney(record[columnId as 'total']) }}</template>
       <template v-else-if="columnId === 'quoteNo'">
-        <a v-if="record.quoteId" :href="`/quotes/edit?id=${record.quoteId}`">{{ record.quoteNo }}</a>
+        <a v-if="record.quoteId" @click="previewQuoteId = record.quoteId">{{ record.quoteNo }}</a>
       </template>
       <template v-else-if="columnId === 'status'">
         <a-tag :color="statusLabels[record.status as Order['status']][1]">{{ statusLabels[record.status as Order['status']][0] }}</a-tag>
@@ -147,7 +151,10 @@ const columns = [
         <a-col :span="10"><a-form-item label="訂單日期" required><a-date-picker v-model:value="form.date" style="width: 100%" /></a-form-item></a-col>
         <a-col :span="24">
           <a-form-item label="定案報價" :required="!form.id || !!form.quoteId" extra="訂單必須對應客戶已接受的報價；選擇後帶入金額。">
-            <RemoteSelect v-model:value="form.quoteId" :fetch="fetchQuotes" :initial-label="form.quoteNo ?? undefined" placeholder="輸入單號搜尋已接受的報價" @pick="fillFromQuote" />
+            <div class="quote-pick">
+              <RemoteSelect v-model:value="form.quoteId" :fetch="fetchQuotes" :initial-label="form.quoteNo ?? undefined" placeholder="輸入單號搜尋已接受的報價" @pick="fillFromQuote" />
+              <a-button :disabled="!form.quoteId" @click="previewQuoteId = form.quoteId ?? null">查看報價</a-button>
+            </div>
           </a-form-item>
         </a-col>
         <a-col :span="12"><a-form-item label="未稅金額" required><a-input-number v-model:value="form.amount" :min="0" style="width: 100%" /></a-form-item></a-col>
@@ -162,6 +169,7 @@ const columns = [
       </a-row>
     </a-form>
   </a-modal>
+  <QuotePreviewDrawer :open="!!previewQuoteId" :quote-id="previewQuoteId" @close="previewQuoteId = null" />
 </template>
 
 <style scoped>
@@ -170,6 +178,14 @@ const columns = [
   justify-content: space-between;
   align-items: center;
   margin-bottom: 12px;
+}
+.quote-pick {
+  display: flex;
+  gap: 8px;
+}
+.quote-pick > :first-child {
+  flex: 1;
+  min-width: 0;
 }
 .muted {
   color: #666;
