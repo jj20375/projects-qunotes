@@ -130,6 +130,9 @@ public static partial class QuoteExcel
             var valueCell = cell.CellRight();
             SetValue(valueCell, value);
             if (value is DateTime) valueCell.Style.DateFormat.Format = "yyyy/MM/dd";
+            // 值的欄位太窄（右側的值落在「單位」欄），合併到旁邊的空欄，日期才不會顯示成 ######。
+            var mergeTo = cell.Address.ColumnNumber == 1 ? 3 : 7;
+            sheet.Range(valueCell.Address.RowNumber, valueCell.Address.ColumnNumber, valueCell.Address.RowNumber, mergeTo).Merge().Style.Alignment.SetHorizontal(XLAlignmentHorizontalValues.Left);
         }
 
         var headers = new List<string> { "項次", "品號", "品名", "規格", "單位", "數量", "單價", "折扣%", "金額", "備註" };
@@ -155,11 +158,11 @@ public static partial class QuoteExcel
             SetValue(sheet.Cell(row, 5), item.Unit);
             if (isItem)
             {
-                sheet.Cell(row, 6).Value = item.Quantity;
-                sheet.Cell(row, 7).Value = item.UnitPrice;
-                if (item.DiscountRate != 0) sheet.Cell(row, 8).Value = item.DiscountRate;
-                sheet.Cell(row, 9).Value = item.Amount;
-                if (includeCost && item.UnitCost is decimal cost) sheet.Cell(row, 11).Value = cost;
+                SetNumber(sheet.Cell(row, 6), item.Quantity);
+                SetNumber(sheet.Cell(row, 7), item.UnitPrice);
+                if (item.DiscountRate != 0) SetNumber(sheet.Cell(row, 8), item.DiscountRate);
+                SetNumber(sheet.Cell(row, 9), item.Amount);
+                if (includeCost && item.UnitCost is decimal cost) SetNumber(sheet.Cell(row, 11), cost);
             }
             else
             {
@@ -170,7 +173,6 @@ public static partial class QuoteExcel
         }
         var bodyRange = sheet.Range(HeaderRowIndex + 1, 1, Math.Max(row - 1, HeaderRowIndex + 1), headers.Count);
         bodyRange.Style.Border.SetOutsideBorder(XLBorderStyleValues.Thin).Border.SetInsideBorder(XLBorderStyleValues.Hair);
-        sheet.Range(HeaderRowIndex + 1, 6, row, 9).Style.NumberFormat.Format = "#,##0.##";
 
         row++;
         if (quote is not null)
@@ -179,25 +181,55 @@ public static partial class QuoteExcel
             {
                 sheet.Cell(row, 8).Value = label;
                 sheet.Cell(row, 8).Style.Font.SetBold();
-                sheet.Cell(row, 9).Value = value;
-                sheet.Cell(row, 9).Style.NumberFormat.Format = "#,##0.##";
+                SetNumber(sheet.Cell(row, 9), value);
                 row++;
             }
             row++;
         }
-        foreach (var (label, value) in new[] { ("付款條件", quote?.PaymentTerms), ("交貨條件", quote?.DeliveryTerms), ("備註條款", QuoteTerms.Numbered(quote?.Terms)) })
+        var columnWidths = new[] { (1, 10), (2, 14), (3, 34), (4, 24), (5, 8), (6, 10), (7, 12), (8, 10), (9, 14), (10, 18), (11, 12) };
+        foreach (var (column, width) in columnWidths) sheet.Column(column).Width = width;
+        // 條款合併在 B～J 欄；Excel 不會自動調整合併儲存格的列高，所以依文字長度估算列高。
+        var textWidth = columnWidths.Where(value => value.Item1 is >= 2 and <= 10).Sum(value => value.Item2);
+        void WriteText(string? label, string? text)
         {
-            sheet.Cell(row, 1).Value = label;
-            sheet.Cell(row, 1).Style.Font.SetBold();
-            SetValue(sheet.Cell(row, 2), value);
-            sheet.Range(row, 2, row, 10).Merge().Style.Alignment.SetWrapText();
+            if (label is not null)
+            {
+                sheet.Cell(row, 1).Value = label;
+                sheet.Cell(row, 1).Style.Font.SetBold();
+            }
+            SetValue(sheet.Cell(row, 2), text);
+            var range = sheet.Range(row, 2, row, 10).Merge();
+            range.Style.Alignment.SetWrapText().Alignment.SetVertical(XLAlignmentVerticalValues.Top);
+            sheet.Cell(row, 1).Style.Alignment.SetVertical(XLAlignmentVerticalValues.Top);
+            var lines = EstimateLines(text, textWidth);
+            if (lines > 1) sheet.Row(row).Height = 15.75 * lines;
             row++;
         }
+        WriteText("付款條件", quote?.PaymentTerms);
+        WriteText("交貨條件", quote?.DeliveryTerms);
+        // 每一條條款各佔一列（第一列標「備註條款」），匯入時會把下方沒有標籤的續列併回條款。
+        var terms = QuoteTerms.Numbered(quote?.Terms)?.Split('\n') ?? [];
+        if (terms.Length == 0) WriteText("備註條款", null);
+        for (var i = 0; i < terms.Length; i++) WriteText(i == 0 ? "備註條款" : null, terms[i]);
 
-        foreach (var (column, width) in new[] { (1, 10), (2, 14), (3, 34), (4, 24), (5, 8), (6, 10), (7, 12), (8, 10), (9, 14), (10, 18), (11, 12) }) sheet.Column(column).Width = width;
         using var stream = new MemoryStream();
         workbook.SaveAs(stream);
         return stream.ToArray();
+    }
+
+    /// <summary>數字：整數不顯示小數點（#,##0.## 在整數時會留下「50,000.」的小數點），有小數才顯示到兩位或四位。</summary>
+    private static void SetNumber(IXLCell cell, decimal value)
+    {
+        cell.Value = value;
+        cell.Style.NumberFormat.Format = value == decimal.Truncate(value) ? "#,##0" : value * 100 == decimal.Truncate(value * 100) ? "#,##0.00" : "#,##0.####";
+    }
+
+    /// <summary>估算文字在指定欄寬（字元數）內換行後的行數：中文等全形字算兩個字元寬。</summary>
+    private static int EstimateLines(string? text, double widthChars)
+    {
+        if (string.IsNullOrEmpty(text)) return 1;
+        var usable = Math.Max(widthChars * 0.95, 10);
+        return text.Split('\n').Sum(line => Math.Max(1, (int)Math.Ceiling(line.Sum(ch => ch > 0x2E7F ? 2 : 1) / usable)));
     }
 
     private static void SetValue(IXLCell cell, object? value)
@@ -354,6 +386,18 @@ public static partial class QuoteExcel
                 var value = parts.Length == 2 && !string.IsNullOrWhiteSpace(parts[1])
                     ? parts[1].Trim()
                     : Enumerable.Range(column + 1, 3).Select(next => CellText(sheet.Cell(row, next))).FirstOrDefault(text => !string.IsNullOrWhiteSpace(text));
+                // 條款一條一列時（本系統匯出的格式），標籤只在第一列：下方「標籤欄空白、右邊有文字」的列都屬於條款，遇到空白列或其他標籤就停。
+                if (match.Field == "Terms" && value is not null)
+                {
+                    var lines = new List<string> { value };
+                    for (var next = row + 1; next <= lastRow && string.IsNullOrWhiteSpace(CellText(sheet.Cell(next, column))); next++)
+                    {
+                        var text = Enumerable.Range(column + 1, 3).Select(col => CellText(sheet.Cell(next, col))).FirstOrDefault(cell => !string.IsNullOrWhiteSpace(cell));
+                        if (text is null) break;
+                        lines.Add(text);
+                    }
+                    value = string.Join('\n', lines);
+                }
                 if (value is not null) header[match.Field] = value;
             }
         }
