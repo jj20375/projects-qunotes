@@ -387,4 +387,11 @@ await step('停用公司後該公司成員 token 立即失效', async () => {
   assert.equal((await call('POST', '/api/auth/login', { body: { account: `t-admin-${suffix}`, password: seedPassword } })).status, 403);
 });
 
+await step('清理：停用這次建立的測試帳號（不讓公司通訊錄與成員下拉堆滿測試帳號）', async () => {
+  for (const account of [memberAccount]) {
+    const found = (await call('GET', `/api/admin/users?keyword=${account}`, { token: demoAdmin.token })).data.items.find((user) => user.account === account);
+    if (found) assert.equal((await call('PATCH', `/api/admin/users/${found.membershipId}`, { token: demoAdmin.token, body: { isActive: false } })).status, 200, account);
+  }
+});
+
 console.log(`\n全部 ${passed} 項通過`);

@@ -268,4 +268,11 @@ await step('客戶 Excel：匯出、dryRun 預覽、正式匯入；業務沒有�
   assert.equal((await call('POST', '/api/clients/import?dryRun=true', { token: sales, form: xlsxForm(exported.bytes) })).status, 403);
 });
 
+await step('清理：停用這次建立的測試帳號（不讓公司通訊錄與成員下拉堆滿測試帳號）', async () => {
+  for (const account of [`qs-${suffix}`]) {
+    const found = (await call('GET', `/api/admin/users?keyword=${account}`, { token: admin })).data.items.find((user) => user.account === account);
+    if (found) assert.equal((await call('PATCH', `/api/admin/users/${found.membershipId}`, { token: admin, body: { isActive: false } })).status, 200, account);
+  }
+});
+
 console.log(`\n全部 ${passed} 項通過`);

@@ -317,4 +317,11 @@ await step('專案子資料的搜尋與分頁由後端處理：訂單、出貨�
   assert.equal(typeof quoted.total, 'number');
 });
 
+await step('清理：停用這次建立的測試帳號（不讓公司通訊錄與成員下拉堆滿測試帳號）', async () => {
+  for (const account of [`ds-${suffix}`, `da-${suffix}`]) {
+    const found = (await call('GET', `/api/admin/users?keyword=${account}`, { token: admin })).data.items.find((user) => user.account === account);
+    if (found) assert.equal((await call('PATCH', `/api/admin/users/${found.membershipId}`, { token: admin, body: { isActive: false } })).status, 200, account);
+  }
+});
+
 console.log(`\n全部 ${passed} 項通過`);
