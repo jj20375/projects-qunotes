@@ -6,7 +6,7 @@ using QuotePlatform.Api.Modules.Common;
 namespace QuotePlatform.Api.Modules.Clients;
 
 /// <summary>客戶主檔與聯絡人。</summary>
-public sealed partial class ClientService(QuoteDbContext db, NumberSequenceService numbers, AuditService audit)
+public sealed partial class ClientService(QuoteDbContext db, ClientAccessService access, NumberSequenceService numbers, AuditService audit)
 {
     [GeneratedRegex(@"^\d{8}$")]
     private static partial Regex TaxIdPattern();
@@ -16,7 +16,7 @@ public sealed partial class ClientService(QuoteDbContext db, NumberSequenceServi
 
     public async Task<object> SearchAsync(RequestScope scope, ClientSearchQuery query, CancellationToken cancellationToken)
     {
-        var clients = db.Clients.AsNoTracking();
+        var clients = access.VisibleClients(scope).AsNoTracking();
         if (!string.IsNullOrWhiteSpace(query.Keyword))
         {
             var keyword = query.Keyword.Trim();
@@ -42,22 +42,25 @@ public sealed partial class ClientService(QuoteDbContext db, NumberSequenceServi
                 value.Phone,
                 value.Status,
                 value.OwnerUserId,
+                value.DepartmentId,
                 ownerName = db.Users.Where(user => user.Id == value.OwnerUserId).Select(user => user.DisplayName).FirstOrDefault(),
+                departmentName = db.Departments.Where(department => department.Id == value.DepartmentId).Select(department => department.Name).FirstOrDefault(),
                 primaryContact = db.ClientContacts.Where(contact => contact.ClientId == value.Id).OrderByDescending(contact => contact.IsPrimary).ThenBy(contact => contact.SortOrder).Select(contact => contact.Name).FirstOrDefault(),
                 projectCount = db.Projects.Count(project => project.ClientId == value.Id),
             })
             .ToListAsync(cancellationToken);
         var editable = await EditableOwnerFilterAsync(scope, cancellationToken);
-        return new { total, page, pageSize, items = rows.Select(value => new { value.Id, value.Code, value.Name, value.ShortName, value.TaxId, value.Phone, value.Status, value.OwnerUserId, value.ownerName, value.primaryContact, value.projectCount, canEdit = editable(value.OwnerUserId) }) };
+        return new { total, page, pageSize, items = rows.Select(value => new { value.Id, value.Code, value.Name, value.ShortName, value.TaxId, value.Phone, value.Status, value.OwnerUserId, value.ownerName, value.DepartmentId, value.departmentName, value.primaryContact, value.projectCount, canEdit = editable(value.OwnerUserId) }) };
     }
 
     public async Task<ServiceResult<object>> GetAsync(RequestScope scope, Guid clientId, CancellationToken cancellationToken)
     {
-        var client = await db.Clients.AsNoTracking().SingleOrDefaultAsync(value => value.Id == clientId, cancellationToken);
+        var client = await access.VisibleClients(scope).AsNoTracking().SingleOrDefaultAsync(value => value.Id == clientId, cancellationToken);
         if (client is null) return ServiceResult<object>.NotFound("找不到客戶。");
+        var departmentName = client.DepartmentId is Guid departmentId ? await db.Departments.Where(value => value.Id == departmentId).Select(value => value.Name).SingleOrDefaultAsync(cancellationToken) : null;
         var contacts = await db.ClientContacts.AsNoTracking().Where(value => value.ClientId == clientId).OrderByDescending(value => value.IsPrimary).ThenBy(value => value.SortOrder).ToListAsync(cancellationToken);
         var ownerName = client.OwnerUserId is Guid ownerId ? await db.Users.Where(value => value.Id == ownerId).Select(value => value.DisplayName).SingleOrDefaultAsync(cancellationToken) : null;
-        var parentName = client.ParentClientId is Guid parentId ? await db.Clients.Where(value => value.Id == parentId).Select(value => value.Name).SingleOrDefaultAsync(cancellationToken) : null;
+        var parentName = client.ParentClientId is Guid parentId ? await access.VisibleClients(scope).Where(value => value.Id == parentId).Select(value => value.Name).SingleOrDefaultAsync(cancellationToken) : null;
         var canEdit = scope.Has("clients", "update") && (await EditableOwnerFilterAsync(scope, cancellationToken))(client.OwnerUserId);
         return ServiceResult<object>.Ok(new
         {
@@ -78,6 +81,9 @@ public sealed partial class ClientService(QuoteDbContext db, NumberSequenceServi
             client.PaymentTerms,
             client.OwnerUserId,
             ownerName,
+            client.DepartmentId,
+            departmentName,
+            canChangeDepartment = scope.Has("clients", "update") && access.CanChooseDepartment(scope),
             client.Status,
             client.Note,
             client.CreatedAt,
@@ -92,36 +98,47 @@ public sealed partial class ClientService(QuoteDbContext db, NumberSequenceServi
     {
         // 新客戶預設由建立者負責；指定其他負責人時，仍必須是自己可管理範圍內的人，避免建完就失去修改權。
         var ownerUserId = input.OwnerUserId ?? scope.UserId;
-        if (await ValidateAsync(input, null, cancellationToken) is string error) return ServiceResult<object>.BadRequest(error);
+        if (await ValidateAsync(scope, input, null, cancellationToken) is string error) return ServiceResult<object>.BadRequest(error);
+        // 客戶所屬部門預設為建立者的部門；只有全公司範圍的管理者可以指定其他部門。
+        var departmentId = input.DepartmentId ?? scope.DepartmentId;
+        if (input.DepartmentId is not null && input.DepartmentId != scope.DepartmentId && !access.CanChooseDepartment(scope)) return ServiceResult<object>.Forbidden("只有全公司範圍的管理者可以指定客戶所屬部門。");
+        if (departmentId is not Guid newDepartmentId || !await db.Departments.AnyAsync(value => value.Id == newDepartmentId && value.IsActive, cancellationToken)) return ServiceResult<object>.BadRequest("請選擇客戶所屬部門。");
         if (!(await EditableOwnerFilterAsync(scope, cancellationToken))(ownerUserId)) return ServiceResult<object>.BadRequest("負責人必須是自己或可管理範圍內的成員。");
 
         var code = string.IsNullOrWhiteSpace(input.Code) ? await numbers.NextClientCodeAsync(scope.CompanyId!.Value, cancellationToken) : input.Code.Trim();
         if (await db.Clients.IgnoreQueryFilters().AnyAsync(value => value.CompanyId == scope.CompanyId && value.Code == code, cancellationToken)) return ServiceResult<object>.Conflict("客戶代碼已被使用。");
 
-        var client = new Client { Code = code, CreatedBy = scope.UserId };
+        var client = new Client { Code = code, CreatedBy = scope.UserId, DepartmentId = newDepartmentId };
         Apply(client, input, ownerUserId);
         db.Clients.Add(client);
         ReplaceContacts(client.Id, [], input.Contacts ?? []);
-        audit.Add(scope.CompanyId, scope.UserId, "client", client.Id, "create", after: new { client.Code, client.Name, client.TaxId, client.OwnerUserId });
+        audit.Add(scope.CompanyId, scope.UserId, "client", client.Id, "create", after: new { client.Code, client.Name, client.TaxId, client.OwnerUserId, client.DepartmentId });
         await db.SaveChangesAsync(cancellationToken);
         return ServiceResult<object>.Created(new { client.Id, client.Code });
     }
 
     public async Task<ServiceResult<object>> UpdateAsync(RequestScope scope, Guid clientId, ClientInput input, CancellationToken cancellationToken)
     {
-        var client = await db.Clients.SingleOrDefaultAsync(value => value.Id == clientId, cancellationToken);
+        var client = await access.VisibleClients(scope).SingleOrDefaultAsync(value => value.Id == clientId, cancellationToken);
         if (client is null) return ServiceResult<object>.NotFound("找不到客戶。");
         var editable = await EditableOwnerFilterAsync(scope, cancellationToken);
         if (!editable(client.OwnerUserId)) return ServiceResult<object>.Forbidden("只能修改自己或可管理範圍內成員負責的客戶。");
-        if (await ValidateAsync(input, clientId, cancellationToken) is string error) return ServiceResult<object>.BadRequest(error);
+        if (await ValidateAsync(scope, input, clientId, cancellationToken) is string error) return ServiceResult<object>.BadRequest(error);
         var ownerUserId = input.OwnerUserId ?? client.OwnerUserId;
         if (ownerUserId != client.OwnerUserId && !editable(ownerUserId)) return ServiceResult<object>.BadRequest("負責人必須是自己或可管理範圍內的成員。");
 
         var code = string.IsNullOrWhiteSpace(input.Code) ? client.Code : input.Code.Trim();
         if (code != client.Code && await db.Clients.IgnoreQueryFilters().AnyAsync(value => value.CompanyId == client.CompanyId && value.Code == code, cancellationToken)) return ServiceResult<object>.Conflict("客戶代碼已被使用。");
 
-        var before = new { client.Code, client.Name, client.TaxId, client.OwnerUserId, client.Status };
+        // 移動客戶所屬部門：只有全公司範圍的管理者可以，移動後原部門的人就看不到這個客戶。
+        if (input.DepartmentId is Guid newDepartmentId && newDepartmentId != client.DepartmentId)
+        {
+            if (!access.CanChooseDepartment(scope)) return ServiceResult<object>.Forbidden("只有全公司範圍的管理者可以移動客戶所屬部門。");
+            if (!await db.Departments.AnyAsync(value => value.Id == newDepartmentId && value.IsActive, cancellationToken)) return ServiceResult<object>.BadRequest("部門不存在或已停用。");
+        }
+        var before = new { client.Code, client.Name, client.TaxId, client.OwnerUserId, client.DepartmentId, client.Status };
         client.Code = code;
+        client.DepartmentId = input.DepartmentId ?? client.DepartmentId;
         Apply(client, input, ownerUserId);
         client.UpdatedBy = scope.UserId;
         client.UpdatedAt = DateTimeOffset.UtcNow;
@@ -130,7 +147,7 @@ public sealed partial class ClientService(QuoteDbContext db, NumberSequenceServi
             var existing = await db.ClientContacts.Where(value => value.ClientId == clientId).ToListAsync(cancellationToken);
             ReplaceContacts(clientId, existing, input.Contacts);
         }
-        audit.Add(scope.CompanyId, scope.UserId, "client", client.Id, "update", before, new { client.Code, client.Name, client.TaxId, client.OwnerUserId, client.Status });
+        audit.Add(scope.CompanyId, scope.UserId, "client", client.Id, "update", before, new { client.Code, client.Name, client.TaxId, client.OwnerUserId, client.DepartmentId, client.Status });
         await db.SaveChangesAsync(cancellationToken);
         return ServiceResult<object>.Ok(new { client.Id });
     }
@@ -138,7 +155,7 @@ public sealed partial class ClientService(QuoteDbContext db, NumberSequenceServi
     /// <summary>軟刪除；已有專案的客戶不可刪，請改為停用，避免歷史報價失去對象。</summary>
     public async Task<ServiceResult<Empty>> DeleteAsync(RequestScope scope, Guid clientId, CancellationToken cancellationToken)
     {
-        var client = await db.Clients.SingleOrDefaultAsync(value => value.Id == clientId, cancellationToken);
+        var client = await access.VisibleClients(scope).SingleOrDefaultAsync(value => value.Id == clientId, cancellationToken);
         if (client is null) return ServiceResult<Empty>.NotFound("找不到客戶。");
         if (!(await EditableOwnerFilterAsync(scope, cancellationToken))(client.OwnerUserId)) return ServiceResult<Empty>.Forbidden("只能刪除自己或可管理範圍內成員負責的客戶。");
         if (await db.Projects.IgnoreQueryFilters().AnyAsync(value => value.ClientId == clientId && !value.IsDeleted, cancellationToken)) return ServiceResult<Empty>.BadRequest("此客戶已有專案，請改為停用。");
@@ -166,13 +183,13 @@ public sealed partial class ClientService(QuoteDbContext db, NumberSequenceServi
         return owner => owner == scope.UserId || (owner is Guid id && userIds.Contains(id));
     }
 
-    private async Task<string?> ValidateAsync(ClientInput input, Guid? clientId, CancellationToken cancellationToken)
+    private async Task<string?> ValidateAsync(RequestScope scope, ClientInput input, Guid? clientId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(input.Name)) return "請輸入客戶名稱。";
         if (!string.IsNullOrWhiteSpace(input.TaxId) && !TaxIdPattern().IsMatch(input.TaxId.Trim())) return "統一編號必須是 8 碼數字。";
         if (!string.IsNullOrWhiteSpace(input.Email) && !EmailPattern().IsMatch(input.Email.Trim())) return "Email 格式不正確。";
         if (input.Status is not (null or "active" or "inactive")) return "狀態只能是 active 或 inactive。";
-        if (input.ParentClientId is Guid parentId && (parentId == clientId || !await db.Clients.AnyAsync(value => value.Id == parentId, cancellationToken))) return "上層客戶不正確。";
+        if (input.ParentClientId is Guid parentId && (parentId == clientId || !await access.VisibleClients(scope).AnyAsync(value => value.Id == parentId, cancellationToken))) return "上層客戶不正確。";
         if (input.OwnerUserId is Guid ownerId && !await db.CompanyMemberships.AnyAsync(value => value.UserId == ownerId && value.IsActive, cancellationToken)) return "負責人必須是公司內啟用中的成員。";
         foreach (var contact in input.Contacts ?? [])
         {

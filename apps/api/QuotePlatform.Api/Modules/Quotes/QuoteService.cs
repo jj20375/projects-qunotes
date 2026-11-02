@@ -14,13 +14,19 @@ namespace QuotePlatform.Api.Modules.Quotes;
 /// 客戶接受時：同專案其他進行中的報價改為 superseded，成交金額回寫專案，草稿／報價中的專案改為得標。
 /// 每個專案只能有一份定案（已接受）報價；訂單必須掛在這份定案報價下，出貨單、發票、保固單再掛在訂單下。
 /// </remarks>
-public sealed partial class QuoteService(QuoteDbContext db, ProjectAccessService access, NumberSequenceService numbers, AuditService audit)
+public sealed partial class QuoteService(QuoteDbContext db, ProjectAccessService access, ClientAccessService clientAccess, NumberSequenceService numbers, AuditService audit)
 {
     [GeneratedRegex(@"-R(\d{1,3})$", RegexOptions.IgnoreCase)]
     private static partial Regex RevisionSuffixPattern();
 
     /// <summary>進行中的報價；用在 EF 查詢內，必須是 List（陣列在 C# 14 會綁到 ReadOnlySpan 多載而無法轉譯）。</summary>
     private static readonly List<string> OpenStatuses = [QuoteStatuses.PendingApproval, QuoteStatuses.Approved, QuoteStatuses.Sent];
+
+    /// <summary>專案底下的報價：看不到專案時回 404，與訂單、保固、發票等子資料一致（不透露專案是否存在）。</summary>
+    public async Task<ServiceResult<object>> ListByProjectAsync(RequestScope scope, Guid projectId, QuoteSearchQuery query, CancellationToken cancellationToken) =>
+        await access.GetAsync(scope, projectId, track: false, cancellationToken) is null
+            ? ServiceResult<object>.NotFound("找不到專案。")
+            : await SearchAsync(scope, query, cancellationToken);
 
     public async Task<ServiceResult<object>> SearchAsync(RequestScope scope, QuoteSearchQuery query, CancellationToken cancellationToken)
     {
@@ -111,7 +117,8 @@ public sealed partial class QuoteService(QuoteDbContext db, ProjectAccessService
         if (project.Status is ProjectStatuses.Closed or ProjectStatuses.Cancelled) return ServiceResult<QuoteCreated>.BadRequest("已結案或已取消的專案不能新增報價。");
 
         var clientId = input.ClientId ?? project.ClientId;
-        var client = await db.Clients.AsNoTracking().SingleOrDefaultAsync(value => value.Id == clientId, cancellationToken);
+        // 專案本身的客戶不受部門可見範圍限制（跨部門合作的專案成員仍能報價）；改選其他客戶時只能選自己看得到的。
+        var client = await (clientId == project.ClientId ? db.Clients : clientAccess.VisibleClients(scope)).AsNoTracking().SingleOrDefaultAsync(value => value.Id == clientId, cancellationToken);
         if (client is null) return ServiceResult<QuoteCreated>.BadRequest("客戶不存在。");
         var setting = await db.CompanySettings.AsNoTracking().SingleOrDefaultAsync(cancellationToken) ?? new CompanySetting();
         var primary = await db.ClientContacts.AsNoTracking().Where(value => value.ClientId == clientId).OrderByDescending(value => value.IsPrimary).ThenBy(value => value.SortOrder).FirstOrDefaultAsync(cancellationToken);
@@ -164,7 +171,7 @@ public sealed partial class QuoteService(QuoteDbContext db, ProjectAccessService
 
         if (input.ClientId is Guid clientId && clientId != quote.ClientId)
         {
-            if (!await db.Clients.AnyAsync(value => value.Id == clientId, cancellationToken)) return ServiceResult<object>.BadRequest("客戶不存在。");
+            if (!await clientAccess.VisibleClients(scope).AnyAsync(value => value.Id == clientId, cancellationToken)) return ServiceResult<object>.BadRequest("客戶不存在。");
             quote.ClientId = clientId;
         }
         var before = new { quote.Total, items = quote.Items.Count };

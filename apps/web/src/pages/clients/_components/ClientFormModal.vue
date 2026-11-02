@@ -3,8 +3,10 @@
  * @component ClientFormModal
  * 客戶新增／編輯／檢視：基本資料、發票資訊與聯絡人清單。
  * 沒有修改權限（canEdit=false）時整份表單唯讀。
+ * 客戶所屬部門決定誰看得到這個客戶：新增時預設為自己的部門，只有全公司範圍的管理者可以選擇或移動。
  */
 import { computed, reactive, ref, watch } from 'vue';
+import { useQuery } from '@tanstack/vue-query';
 import { message, Modal } from 'ant-design-vue';
 import UserSelect from '@/app/components/UserSelect.vue';
 import { useMe } from '@/app/composables/use-me';
@@ -12,6 +14,7 @@ import {
   createClientApi,
   deleteClientApi,
   getClientApi,
+  listDirectoryDepartmentsApi,
   updateClientApi,
   type ClientContact,
   type ClientDetail,
@@ -36,6 +39,7 @@ const empty = () => ({
   invoiceAddress: '',
   paymentTerms: '',
   ownerUserId: undefined as string | undefined,
+  departmentId: undefined as string | undefined,
   status: 'active' as 'active' | 'inactive',
   note: '',
 });
@@ -45,6 +49,14 @@ const detail = ref<ClientDetail | null>(null);
 const loading = ref(false);
 const saving = ref(false);
 const readonly = computed(() => (props.clientId ? !detail.value?.canEdit : !can('clients', 'create')));
+// 全公司範圍的管理者才能選部門（後端也會檢查）；其他人新增時自動歸在自己的部門。
+const canPickDepartment = computed(() => (props.clientId ? !!detail.value?.canChangeDepartment : me.value?.scope.dataScope === 'company'));
+const departments = useQuery({ queryKey: ['directory', 'departments'], queryFn: listDirectoryDepartmentsApi, enabled: canPickDepartment });
+const departmentTree = computed(() => {
+  const rows = departments.data.value ?? [];
+  const build = (parentId: string | null): unknown[] => rows.filter((row) => row.parentId === parentId).map((row) => ({ value: row.id, title: row.name, children: build(row.id) }));
+  return build(null);
+});
 
 watch(
   () => [props.open, props.clientId] as const,
@@ -61,6 +73,7 @@ watch(
       Object.assign(form, {
         ...Object.fromEntries(Object.keys(empty()).map((key) => [key, (result as unknown as Record<string, unknown>)[key] ?? ''])),
         ownerUserId: result.ownerUserId ?? undefined,
+        departmentId: result.departmentId ?? undefined,
         status: result.status,
       });
       contacts.value = result.contacts.map((contact) => ({ ...contact }));
@@ -141,6 +154,12 @@ function confirmDelete() {
           <a-col :span="24"><a-form-item label="發票地址"><a-input v-model:value="form.invoiceAddress" /></a-form-item></a-col>
           <a-col :xs="24" :md="12">
             <a-form-item label="業務負責人"><UserSelect v-model:value="form.ownerUserId" /></a-form-item>
+          </a-col>
+          <a-col :xs="24" :md="12">
+            <a-form-item label="所屬部門" extra="同部門與上層部門的人看得到這位客戶">
+              <a-tree-select v-if="canPickDepartment" v-model:value="form.departmentId" :tree-data="departmentTree" tree-default-expand-all placeholder="預設為自己的部門" />
+              <span v-else>{{ detail?.departmentName ?? '自己的部門' }}</span>
+            </a-form-item>
           </a-col>
           <a-col :xs="24" :md="12">
             <a-form-item label="狀態">

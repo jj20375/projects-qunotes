@@ -277,7 +277,7 @@ company scope（公司一律取自 JWT，路由不帶 companyId）
 ✅ /api/admin/departments                         GET、POST、PATCH /{id}（含移動）、DELETE /{id}
 ✅ /api/admin/users                               GET（keyword、page、pageSize）、POST、PATCH /{membershipId}、POST /{membershipId}/reset-password
 ✅ /api/admin/users/{membershipId}/permissions    GET（角色／個人／有效權限）、PUT（整批取代個人權限）
-✅ /api/admin/roles                               GET、POST、PATCH /{id}、DELETE /{id}、GET|PUT /{id}/permissions
+✅ /api/admin/roles                               GET（forAssignment=true：成員表單用，自訂角色只列自己建立的）、POST、PATCH /{id}、DELETE /{id}、GET|PUT /{id}/permissions
 ✅ /api/admin/permission-catalog?scope=           權限目錄樹（角色與個人權限編輯畫面共用）
 ```
 
@@ -285,7 +285,7 @@ company scope（公司一律取自 JWT，路由不帶 companyId）
 
 ```
 ✅ /api/directory/users | departments            公司通訊錄（選負責人、成員、部門用；任何公司成員可讀）；users 為遠端搜尋（見 7.0）
-✅ /api/clients                                  GET 搜尋（keyword, status, ownerUserId, page, pageSize）、POST
+✅ /api/clients                                  GET 搜尋（keyword, status, ownerUserId, page, pageSize；只回傳看得到的客戶，依資料範圍與所屬部門）、POST
 ✅ /api/clients/{id}                             GET、PUT（帶 contacts 時整批取代聯絡人）、DELETE（軟刪除；有專案不可刪）
 ✅ /api/projects                                 GET 搜尋、POST（自動編號 P{年}-{4 碼}）
      搜尋參數：keyword, status（可重複）, dateField(created|start|end), from, to,
@@ -453,6 +453,7 @@ npm run dev:web:lan          # 同上，但監聽 0.0.0.0，讓區網其他裝�
   - `npm run test:api`：權限目錄與權限計算規則 self-test（不需資料庫）
   - `npm run test:smoke`：API 端對端 17 項（登入、refresh 輪替與重用偵測、平台切換公司、公司隔離、個人權限、防越權、AuthVersion 失效、部門移動、停用公司）。需以 `Quote__LoginCaptchaEnabled=false` 啟動 API，且會在資料庫留下測試資料（`t-*` 公司、`sales-*` 帳號、`custom-*` 角色）。
   - `npm run test:smoke:projects`：第二階段 16 項（客戶與聯絡人、資料範圍 own／department_tree／company、viewer 成員只能讀、狀態／時間／金額搜尋、狀態流程、刪除規則、8 筆併發建立不重號、公司隔離）。前置條件同上，會留下 `UI`／時間戳記命名的測試客戶與專案。
+  - `npm run test:smoke:roles`：角色 × 部門矩陣 9 項。在獨立的測試部門樹（總部→甲課／乙課、稽核）裡，驗證業務、業務主管、會計、唯讀、公司管理員與「本部門」自訂角色各自看得到的客戶、專案、報價與訂單，唯讀與會計的寫入限制，個別資料範圍覆寫與成員換部門。前置條件同上，會留下以執行代號命名的測試部門、客戶與專案，測試帳號結束時停用。
   - `npm run test:smoke:quotes`：第三階段 14 項（計算與含稅反推、客戶快照、送審／退回／核准／送出／接受／拒絕、改版與版次、接受回寫專案、PDF／Excel 匯出、Excel 往返匯入、對照設定匯入、資料範圍、品項成本可見性、客戶 Excel 匯出入）。
   - `npm run test:smoke:quote-format`：報價單格式 8 項（條款整理 API、整段貼上儲存後條列化、Excel 往返保留條款、公司預設條款帶入新報價、單號規則與不合法規則、Logo 上傳／預覽／PDF 內含圖片、移除 Logo）。另需 file-server 已啟動；測試會暫時修改 demo 公司的公司參數，結束時還原。
   - `npm run test:smoke:documents`：第四階段 13 項（訂單／保固／發票、收款與作廢、刪除後號碼可重用、專案摘要、附件上傳下載與 Range、檔頭／大小／token 對調檢查、資料範圍、回呼密鑰）。另需 file-server 已啟動。

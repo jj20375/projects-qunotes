@@ -23,7 +23,7 @@ import {
   type RoleRow,
 } from '@/shared/services/admin-service';
 import type { PermissionAllowance, PermissionCode } from '@/shared/types/permissions';
-import { DATA_SCOPE_LABELS } from '@/shared/types/permissions';
+import { DATA_SCOPE_LABELS, dataScopeOptions as buildDataScopeOptions } from '@/shared/types/permissions';
 
 const props = withDefaults(defineProps<{ mode?: 'company' | 'platform' }>(), { mode: 'company' });
 const { me, can } = useMe();
@@ -81,7 +81,8 @@ const savePermissions = useMutation({
 const formOpen = ref(false);
 const isCreate = ref(true);
 const form = reactive({ code: '', name: '', dataScope: 'own' });
-const dataScopeOptions = Object.entries(DATA_SCOPE_LABELS).map(([value, label]) => ({ value, label }));
+// 公司角色的資料範圍不可大於自己的；平台管理員調整系統角色不受限。
+const dataScopeOptions = computed(() => buildDataScopeOptions(props.mode === 'company' ? me.value?.scope.dataScope : undefined));
 
 const saveRole = useMutation({
   mutationFn: async () => {

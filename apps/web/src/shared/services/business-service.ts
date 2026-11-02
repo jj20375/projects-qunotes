@@ -36,6 +36,8 @@ export interface ClientRow {
   status: 'active' | 'inactive';
   ownerUserId: string | null;
   ownerName: string | null;
+  departmentId: string | null;
+  departmentName: string | null;
   primaryContact: string | null;
   projectCount: number;
   canEdit: boolean;
@@ -70,6 +72,10 @@ export interface ClientDetail {
   paymentTerms: string | null;
   ownerUserId: string | null;
   ownerName: string | null;
+  departmentId: string | null;
+  departmentName: string | null;
+  /** 只有全公司範圍的管理者可以移動客戶所屬部門。 */
+  canChangeDepartment: boolean;
   status: 'active' | 'inactive';
   note: string | null;
   canEdit: boolean;
@@ -77,7 +83,7 @@ export interface ClientDetail {
   contacts: ClientContact[];
 }
 
-export type ClientInput = Omit<ClientDetail, 'id' | 'parentName' | 'ownerName' | 'canEdit' | 'canDelete'>;
+export type ClientInput = Omit<ClientDetail, 'id' | 'parentName' | 'ownerName' | 'departmentName' | 'canChangeDepartment' | 'canEdit' | 'canDelete'>;
 
 export interface Paged<T> {
   total: number;

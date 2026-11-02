@@ -29,6 +29,11 @@ public sealed class Client : ICompanyOwned, ISoftDelete
     public string? PaymentTerms { get; set; }
     /// <summary>業務負責人；決定非全公司範圍的人能否修改此客戶。</summary>
     public Guid? OwnerUserId { get; set; }
+    /// <summary>
+    /// 客戶所屬部門；決定誰看得到這個客戶（本人與部門範圍看自己部門，部門樹範圍含下層部門，全公司範圍全部）。
+    /// 建立時預設為建立者的部門，只有全公司範圍的管理者可以移動。
+    /// </summary>
+    public Guid? DepartmentId { get; set; }
     /// <summary>active／inactive。</summary>
     public string Status { get; set; } = "active";
     public string? Note { get; set; }

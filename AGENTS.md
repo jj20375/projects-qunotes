@@ -20,7 +20,7 @@
 ## 不可違反的原則
 
 1. **公司隔離**：所有業務資料以已驗證 JWT 的 `company_id` 決定範圍；不信任前端傳入的 companyId。業務 entity 必須實作 `ICompanyOwned`，由 Global Query Filter 過濾，寫入時由 `SaveChanges` 攔截器強制填入 JWT 的 `CompanyId`。
-2. **資料範圍**：專案的可見性依角色／個人的 `data_scope`（own／department／department_tree／company）決定；報價、訂單、保固、發票、附件一律繼承所屬專案的可見性，不得各自另訂規則。
+2. **資料範圍**：專案的可見性依角色／個人的 `data_scope`（own／department／department_tree／company）決定；報價、訂單、出貨、保固、發票、附件一律繼承所屬專案的可見性，不得各自另訂規則。客戶則依「客戶所屬部門」套用同一組資料範圍（本人與部門看自己部門，部門樹含下層，全公司看全部），由 `ClientAccessService.VisibleClients` 統一過濾。
 3. **權限雙重檢查**：前端 `PermissionGate`、route manifest 只負責 UX；API 的 permission evaluator 才是安全邊界。
 4. **與美達特分離**：MariaDB 沿用美達特的共用 container（不另建），但只能使用 `quote_platform` 資料庫與 `quote_app` 帳號；不得連線、授權或寫入任何 `metat_*` 資料庫或美達特的 MinIO。Mac 上要連 `shared-mariadb`（9529），不是 `metat-vps-copy-db`（3306）。API 不持有 root 密碼。
 5. **金額由後端計算**：報價、訂單、發票金額一律由後端重算並以 `decimal` 儲存，前端計算只作顯示。

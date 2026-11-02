@@ -19,6 +19,7 @@ public sealed record ClientInput(
     string? InvoiceAddress,
     string? PaymentTerms,
     Guid? OwnerUserId,
+    Guid? DepartmentId,
     string? Status,
     string? Note,
     ContactInput[]? Contacts);
@@ -28,16 +29,17 @@ public sealed record ContactInput(Guid? Id, string? Name, string? Title, string?
 public sealed record ClientSearchQuery(string? Keyword, string? Status, Guid? OwnerUserId, int? Page, int? PageSize);
 
 /// <summary>
-/// 客戶與聯絡人（company scope）。有 <c>clients:read</c> 的人看得到全公司客戶（報價時要選）；
-/// 修改則依資料範圍限制為自己負責或可見部門成員負責的客戶。
+/// 客戶與聯絡人（company scope）。可見範圍依資料範圍與客戶所屬部門：本人與部門範圍看自己部門的客戶，
+/// 部門樹範圍含下層部門，全公司範圍看全部；修改則限制為自己負責或可見部門成員負責的客戶。
+/// 客戶所屬部門預設為建立者的部門，只有全公司範圍的管理者可以移動。
 /// </summary>
 [Route("api/clients")]
 public sealed class ClientsController(ClientService service, ClientTransferService transfer) : ScopedControllerBase
 {
     [HttpGet("export")]
     public async Task<ActionResult> Export(CancellationToken cancellationToken) =>
-        TryCompany("clients", "read", out _, "export")
-            ? File(await transfer.ExportAsync(cancellationToken), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"客戶清單_{BusinessTime.Today:yyyyMMdd}.xlsx")
+        TryCompany("clients", "read", out var scope, "export")
+            ? File(await transfer.ExportAsync(scope, cancellationToken), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"客戶清單_{BusinessTime.Today:yyyyMMdd}.xlsx")
             : Forbidden();
 
     /// <summary>dryRun=true 只回傳每列預計的處理結果，不寫入。</summary>

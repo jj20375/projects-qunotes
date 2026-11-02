@@ -2,7 +2,7 @@
 
 DDL 草稿見 [database-schema.sql](./database-schema.sql)；實作時以 EF Core entity + migration 為準，兩者必須同步更新。
 
-**目前狀態**：第一階段的 12 張表（`users`、`refresh_tokens`、`companies`、`company_settings`、`departments`、`department_closure`、`company_memberships`、`roles`、`permissions`、`role_permissions`、`user_permissions`、`audit_logs`）已由 migration `InitialIdentity` 建立，entity 在 `apps/api/QuotePlatform.Api/Infrastructure/Entities.cs`。第二階段的 `clients`、`client_contacts`、`projects`、`project_members`、`project_status_histories`、`number_sequences` 由 migration `AddClientsAndProjects` 建立，entity 在 `Infrastructure/BusinessEntities.cs`。第三階段的 `quotes`、`quote_items`、`products`、`import_jobs`、`import_mapping_profiles` 由 migration `AddQuotesAndProducts` 建立，entity 在 `Infrastructure/QuoteEntities.cs`。第四階段的 `files`、`attachments`、`project_orders`、`project_warranties`、`project_invoices` 由 migration `AddProjectDocumentsAndFiles` 建立，entity 在 `Infrastructure/DocumentEntities.cs`。報價單格式所需的 `companies.EnglishName`、`company_settings.QuoteNumberPattern` 由 migration `AddQuoteBranding` 新增。出貨單 `project_shipments` 由 migration `AddProjectShipments` 建立。草稿中的 `quote_templates` 與 `upload_sessions` 尚未建立。
+**目前狀態**：第一階段的 12 張表（`users`、`refresh_tokens`、`companies`、`company_settings`、`departments`、`department_closure`、`company_memberships`、`roles`、`permissions`、`role_permissions`、`user_permissions`、`audit_logs`）已由 migration `InitialIdentity` 建立，entity 在 `apps/api/QuotePlatform.Api/Infrastructure/Entities.cs`。第二階段的 `clients`、`client_contacts`、`projects`、`project_members`、`project_status_histories`、`number_sequences` 由 migration `AddClientsAndProjects` 建立，entity 在 `Infrastructure/BusinessEntities.cs`。第三階段的 `quotes`、`quote_items`、`products`、`import_jobs`、`import_mapping_profiles` 由 migration `AddQuotesAndProducts` 建立，entity 在 `Infrastructure/QuoteEntities.cs`。第四階段的 `files`、`attachments`、`project_orders`、`project_warranties`、`project_invoices` 由 migration `AddProjectDocumentsAndFiles` 建立，entity 在 `Infrastructure/DocumentEntities.cs`。報價單格式所需的 `companies.EnglishName`、`company_settings.QuoteNumberPattern` 由 migration `AddQuoteBranding` 新增。出貨單 `project_shipments` 由 migration `AddProjectShipments` 建立。客戶所屬部門 `clients.DepartmentId` 與自訂角色建立者 `roles.CreatedBy` 由 migration `AddClientDepartmentAndRoleCreator` 新增。草稿中的 `quote_templates` 與 `upload_sessions` 尚未建立。
 
 第三階段與草稿的差異：`quotes` 多了 `NetAmount`（未稅金額，含稅報價時由總額反推）、`SubmittedBy／SubmittedAt`、`StatusReason`（退回或拒絕原因），沒有 `LastPdfFileId`（PDF 即時產生，不存檔）；`import_jobs` 多了 `FileName`，`FileId` 待第四階段檔案服務上線再保存原始檔；`quote_templates` 尚未建立。
 
@@ -125,7 +125,7 @@ erDiagram
 
 | 資料表 | 用途與主要約束 |
 |---|---|
-| `clients` | 客戶主檔。unique(`CompanyId`,`Code`)；索引(`CompanyId`,`TaxId`)、(`CompanyId`,`Name`)；`ParentClientId` 支援集團／分公司；`OwnerUserId` 為業務負責人；`InvoiceTitle`、`InvoiceAddress`、`PaymentTerms` 供報價與發票帶入 |
+| `clients` | 客戶主檔。unique(`CompanyId`,`Code`)；索引(`CompanyId`,`TaxId`)、(`CompanyId`,`Name`)；`ParentClientId` 支援集團／分公司；`OwnerUserId` 為業務負責人；`DepartmentId` 為所屬部門（決定誰看得到，FK `departments` SET NULL，索引(`CompanyId`,`DepartmentId`)，既有資料由 migration 依負責人目前的部門回填，沒有負責人的歸公司最上層部門）；`InvoiceTitle`、`InvoiceAddress`、`PaymentTerms` 供報價與發票帶入 |
 | `client_contacts` | 聯絡人，`IsPrimary` 為報價預設帶入對象 |
 | `products` | 品項價目表，報價明細自動完成用；unique(`CompanyId`,`Code`) |
 

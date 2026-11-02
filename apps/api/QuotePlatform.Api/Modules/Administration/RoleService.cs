@@ -13,7 +13,11 @@ public sealed partial class RoleService(QuoteDbContext db, PermissionGrantServic
     [GeneratedRegex("^[a-z0-9][a-z0-9-]{1,49}$")]
     private static partial Regex CodePattern();
 
-    public async Task<IReadOnlyList<object>> ListCompanyRolesAsync(RequestScope scope, CancellationToken cancellationToken)
+    /// <param name="forAssignment">
+    /// true 時是給成員表單選角色用：自訂角色只列出自己建立的（舊資料沒有建立者，視為不限制）；
+    /// 角色管理頁（false）仍列出全部，讓管理員能維護同事建立的角色。
+    /// </param>
+    public async Task<IReadOnlyList<object>> ListCompanyRolesAsync(RequestScope scope, bool forAssignment, CancellationToken cancellationToken)
     {
         var memberCounts = await db.CompanyMemberships.AsNoTracking()
             .GroupBy(value => value.RoleId)
@@ -21,6 +25,7 @@ public sealed partial class RoleService(QuoteDbContext db, PermissionGrantServic
             .ToDictionaryAsync(value => value.RoleId, value => value.Count, cancellationToken);
         var roles = await db.Roles.AsNoTracking()
             .Where(value => value.Scope == "company" && (value.CompanyId == null || value.CompanyId == scope.CompanyId))
+            .Where(value => !forAssignment || value.CompanyId == null || value.CreatedBy == null || value.CreatedBy == scope.UserId)
             .OrderByDescending(value => value.IsSystem).ThenBy(value => value.CreatedAt)
             .ToListAsync(cancellationToken);
         return roles.Select(value => (object)new
@@ -31,10 +36,15 @@ public sealed partial class RoleService(QuoteDbContext db, PermissionGrantServic
             value.DataScope,
             value.IsSystem,
             value.IsFullAccess,
+            value.CreatedBy,
             isEditable = value.CompanyId == scope.CompanyId,
             memberCount = memberCounts.GetValueOrDefault(value.Id),
         }).ToList();
     }
+
+    private static string ScopeCeilingMessage(RequestScope scope) => $"角色的資料範圍不可大於自己的資料範圍（您目前是「{DataScopes.Label(scope.DataScope)}」）。";
+
+    private static string BroaderRoleMessage(RequestScope scope) => $"這個角色的資料範圍比您的（{DataScopes.Label(scope.DataScope)}）大，不能修改或刪除。";
 
     public async Task<IReadOnlyList<object>> ListSystemRolesAsync(CancellationToken cancellationToken)
     {
@@ -84,12 +94,13 @@ public sealed partial class RoleService(QuoteDbContext db, PermissionGrantServic
         if (!CodePattern().IsMatch(code)) return ServiceResult<object>.BadRequest("角色代碼只能使用小寫英數與連字號，長度 2～50。");
         if (string.IsNullOrWhiteSpace(request.Name)) return ServiceResult<object>.BadRequest("請輸入角色名稱。");
         if (!DataScopes.IsValid(request.DataScope)) return ServiceResult<object>.BadRequest("資料範圍不正確。");
+        if (!DataScopes.IsWithin(request.DataScope, scope.DataScope)) return ServiceResult<object>.BadRequest(ScopeCeilingMessage(scope));
         if (await db.Roles.AnyAsync(value => value.Code == code && (value.CompanyId == null || value.CompanyId == scope.CompanyId), cancellationToken)) return ServiceResult<object>.Conflict("角色代碼已被使用。");
 
         var permissions = request.Permissions ?? [];
         if (await ValidateCompanyPermissionsAsync(scope, permissions, cancellationToken) is { } error) return error;
 
-        var role = new Role { CompanyId = scope.CompanyId, Scope = "company", Code = code, Name = request.Name.Trim(), DataScope = request.DataScope! };
+        var role = new Role { CompanyId = scope.CompanyId, Scope = "company", Code = code, Name = request.Name.Trim(), DataScope = request.DataScope!, CreatedBy = scope.UserId };
         db.Roles.Add(role);
         await WritePermissionsAsync(role.Id, permissions, "company", cancellationToken);
         audit.Add(scope.CompanyId, scope.UserId, "role", role.Id, "create", after: new { role.Code, role.Name, role.DataScope, permissions });
@@ -102,6 +113,8 @@ public sealed partial class RoleService(QuoteDbContext db, PermissionGrantServic
         var role = await FindEditableRoleAsync(scope, roleId, cancellationToken);
         if (role is null) return ServiceResult<object>.NotFound("找不到可修改的角色。");
         if (request.DataScope is not null && !DataScopes.IsValid(request.DataScope)) return ServiceResult<object>.BadRequest("資料範圍不正確。");
+        if (scope.IsCompany && !DataScopes.IsWithin(role.DataScope, scope.DataScope)) return ServiceResult<object>.BadRequest(BroaderRoleMessage(scope));
+        if (request.DataScope is not null && scope.IsCompany && !DataScopes.IsWithin(request.DataScope, scope.DataScope)) return ServiceResult<object>.BadRequest(ScopeCeilingMessage(scope));
         if (request.Name is not null && string.IsNullOrWhiteSpace(request.Name)) return ServiceResult<object>.BadRequest("角色名稱不可空白。");
 
         var before = new { role.Name, role.DataScope };
@@ -119,6 +132,7 @@ public sealed partial class RoleService(QuoteDbContext db, PermissionGrantServic
     {
         var role = await FindEditableRoleAsync(scope, roleId, cancellationToken);
         if (role is null) return ServiceResult<object>.NotFound("找不到可修改的角色。");
+        if (scope.IsCompany && !DataScopes.IsWithin(role.DataScope, scope.DataScope)) return ServiceResult<object>.BadRequest(BroaderRoleMessage(scope));
         var permissions = request.Permissions ?? [];
 
         if (role.Scope == "company")
@@ -164,6 +178,7 @@ public sealed partial class RoleService(QuoteDbContext db, PermissionGrantServic
     {
         var role = await FindEditableRoleAsync(scope, roleId, cancellationToken);
         if (role is null) return ServiceResult<Empty>.NotFound("找不到可刪除的角色。");
+        if (!DataScopes.IsWithin(role.DataScope, scope.DataScope)) return ServiceResult<Empty>.BadRequest(BroaderRoleMessage(scope));
         if (await db.CompanyMemberships.AnyAsync(value => value.RoleId == roleId, cancellationToken)) return ServiceResult<Empty>.BadRequest("仍有成員使用此角色，請先改派。");
         db.Roles.Remove(role);
         audit.Add(scope.CompanyId, scope.UserId, "role", role.Id, "delete", new { role.Code, role.Name });

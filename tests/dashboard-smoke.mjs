@@ -79,7 +79,8 @@ await step('準備：新公司、部門、兩位業務、一位唯讀成員', as
 let p1;
 let p2;
 await step('準備：定案報價、訂單（含去年同月與已取消）、發票（逾期未收與已收）、未得標、保固', async () => {
-  const client = (await ok(call('POST', '/api/clients', { token: admin, body: { name: '戰情客戶' } }))).id;
+  // 客戶歸在業務部：兩位業務才選得到（客戶依所屬部門隔離）。
+  const client = (await ok(call('POST', '/api/clients', { token: admin, body: { name: '戰情客戶', departmentId: salesDept } }))).id;
   p1 = (await ok(call('POST', '/api/projects', { token: salesA, body: { name: 'P1', clientId: client } }))).id;
   p2 = (await ok(call('POST', '/api/projects', { token: salesB, body: { name: 'P2', clientId: client } }))).id;
   const p3 = (await ok(call('POST', '/api/projects', { token: admin, body: { name: 'P3 財務部', clientId: client, departmentId: financeDept } }))).id;

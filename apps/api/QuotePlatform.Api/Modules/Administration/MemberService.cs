@@ -81,6 +81,7 @@ public sealed class MemberService(QuoteDbContext db, PermissionGrantService gran
         }
         if (await CheckAssignableRoleAsync(scope, roleId!.Value, cancellationToken) is string roleError) return ServiceResult<object>.BadRequest(roleError);
         if (request.DataScopeOverride is not null && !DataScopes.IsValid(request.DataScopeOverride)) return ServiceResult<object>.BadRequest("資料範圍不正確。");
+        if (request.DataScopeOverride is not null && !DataScopes.IsWithin(request.DataScopeOverride, scope.DataScope)) return ServiceResult<object>.BadRequest($"個人資料範圍不可大於自己的資料範圍（您目前是「{DataScopes.Label(scope.DataScope)}」）。");
 
         var user = new User { Account = account, DisplayName = request.DisplayName.Trim(), Email = NullIfBlank(request.Email) };
         user.PasswordHash = PasswordRules.Hash(user, request.Password!);
@@ -123,6 +124,7 @@ public sealed class MemberService(QuoteDbContext db, PermissionGrantService gran
         if (changesScope)
         {
             if (request.ClearDataScopeOverride != true && !DataScopes.IsValid(request.DataScopeOverride)) return ServiceResult<object>.BadRequest("資料範圍不正確。");
+            if (request.ClearDataScopeOverride != true && !DataScopes.IsWithin(request.DataScopeOverride, scope.DataScope)) return ServiceResult<object>.BadRequest($"個人資料範圍不可大於自己的資料範圍（您目前是「{DataScopes.Label(scope.DataScope)}」）。");
             membership.DataScopeOverride = request.ClearDataScopeOverride == true ? null : request.DataScopeOverride;
         }
         if (changesActive) membership.IsActive = request.IsActive!.Value;
@@ -267,6 +269,10 @@ public sealed class MemberService(QuoteDbContext db, PermissionGrantService gran
     {
         var role = await db.Roles.AsNoTracking().SingleOrDefaultAsync(value => value.Id == roleId && value.Scope == "company" && (value.CompanyId == null || value.CompanyId == scope.CompanyId), cancellationToken);
         if (role is null) return "角色不存在。";
+        // 角色的資料範圍不可大於操作者自己的，否則可以靠指派範圍更大的角色提升自己或他人的可見範圍。
+        if (!DataScopes.IsWithin(role.DataScope, scope.DataScope)) return $"角色「{role.Name}」的資料範圍（{DataScopes.Label(role.DataScope)}）比您的（{DataScopes.Label(scope.DataScope)}）大，不能指派。";
+        // 自訂角色只有建立者能指派（舊資料沒有建立者，不限制）。
+        if (role.CompanyId is not null && role.CreatedBy is Guid creator && creator != scope.UserId) return $"自訂角色「{role.Name}」不是您建立的，不能指派。";
         var roleGrants = await grantService.ForRolesAsync([roleId], cancellationToken);
         return PermissionGrantRules.IsSubsetOf(roleGrants, scope.Grants) ? null : $"不可指派權限比自己高的角色「{role.Name}」。";
     }

@@ -99,6 +99,7 @@ builder.Services.AddScoped<RoleService>();
 builder.Services.AddScoped<SystemUserService>();
 builder.Services.AddScoped<NumberSequenceService>();
 builder.Services.AddScoped<ProjectAccessService>();
+builder.Services.AddScoped<ClientAccessService>();
 builder.Services.AddScoped<ClientService>();
 builder.Services.AddScoped<ProjectService>();
 builder.Services.AddScoped<ClientTransferService>();

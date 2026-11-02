@@ -27,7 +27,7 @@ public sealed class QuotesController(QuoteService service, QuoteDocumentService 
     [HttpGet("projects/{projectId:guid}/quotes")]
     public async Task<ActionResult> ListByProject(Guid projectId, [FromQuery] ListQuery query, CancellationToken cancellationToken) =>
         TryCompany("quotes", "read", out var scope)
-            ? ToResult(await service.SearchAsync(scope, new QuoteSearchQuery(query.KeywordText, null, projectId, null, null, null, null, null, false, query.PageValue, query.PageSizeValue, "quoteNo"), cancellationToken))
+            ? ToResult(await service.ListByProjectAsync(scope, projectId, new QuoteSearchQuery(query.KeywordText, null, projectId, null, null, null, null, null, false, query.PageValue, query.PageSizeValue, "quoteNo"), cancellationToken))
             : Forbidden();
 
     [HttpPost("projects/{projectId:guid}/quotes")]

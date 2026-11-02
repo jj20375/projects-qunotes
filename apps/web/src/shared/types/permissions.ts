@@ -77,6 +77,27 @@ export const DATA_SCOPE_LABELS: Record<string, string> = {
   company: '全公司',
 };
 
+const DATA_SCOPE_ORDER = ['own', 'department', 'department_tree', 'company'];
+
+/**
+ * 資料範圍下拉選項：比操作者自己的範圍大的選項停用（後端也會拒絕）。
+ * 否則有角色管理權限的人可以建立「全公司」角色再指派給自己，繞過資料範圍。
+ * actorScope 不給時不限制（平台管理員調整系統角色）。
+ */
+/** 資料範圍是否超過操作者自己的範圍（不認得的值當成最大）。 */
+export function exceedsDataScope(scope: string, actorScope?: string): boolean {
+  const rank = (value: string) => (DATA_SCOPE_ORDER.includes(value) ? DATA_SCOPE_ORDER.indexOf(value) : DATA_SCOPE_ORDER.length);
+  return actorScope !== undefined && rank(scope) > rank(actorScope);
+}
+
+export function dataScopeOptions(actorScope?: string, extra: { value: string; label: string }[] = []) {
+  const limit = actorScope === undefined ? DATA_SCOPE_ORDER.length : DATA_SCOPE_ORDER.indexOf(actorScope);
+  return [
+    ...extra,
+    ...DATA_SCOPE_ORDER.map((value, index) => ({ value, label: DATA_SCOPE_LABELS[value], disabled: index > limit })),
+  ];
+}
+
 export const ACTION_LABELS: Record<PermissionAction, string> = {
   create: '新增',
   read: '讀取',

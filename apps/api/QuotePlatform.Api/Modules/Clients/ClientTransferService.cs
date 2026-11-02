@@ -16,7 +16,7 @@ public sealed record ClientImportRow(int Row, string Action, string? Code, strin
 /// 比對既有客戶：有代碼用代碼，否則用統一編號；都沒有就新增。更新仍受資料範圍限制（只能改自己可管理的客戶），
 /// 無權修改的列標為錯誤而不是略過，讓使用者知道哪些資料沒有進去。
 /// </remarks>
-public sealed partial class ClientTransferService(QuoteDbContext db, ClientService clients, NumberSequenceService numbers, AuditService audit)
+public sealed partial class ClientTransferService(QuoteDbContext db, ClientAccessService access, ClientService clients, NumberSequenceService numbers, AuditService audit)
 {
     private static readonly (string Field, string Header)[] Columns =
     [
@@ -29,10 +29,12 @@ public sealed partial class ClientTransferService(QuoteDbContext db, ClientServi
     [GeneratedRegex(@"^\d{8}$")]
     private static partial Regex TaxIdPattern();
 
-    public async Task<byte[]> ExportAsync(CancellationToken cancellationToken)
+    public async Task<byte[]> ExportAsync(RequestScope scope, CancellationToken cancellationToken)
     {
-        var rows = await db.Clients.AsNoTracking().OrderBy(value => value.Code).ToListAsync(cancellationToken);
-        var contacts = (await db.ClientContacts.AsNoTracking().OrderByDescending(value => value.IsPrimary).ThenBy(value => value.SortOrder).ToListAsync(cancellationToken))
+        // 只匯出看得到的客戶（依資料範圍與客戶所屬部門）。
+        var rows = await access.VisibleClients(scope).AsNoTracking().OrderBy(value => value.Code).ToListAsync(cancellationToken);
+        var exportedIds = rows.Select(value => value.Id).ToList();
+        var contacts = (await db.ClientContacts.AsNoTracking().Where(value => exportedIds.Contains(value.ClientId)).OrderByDescending(value => value.IsPrimary).ThenBy(value => value.SortOrder).ToListAsync(cancellationToken))
             .GroupBy(value => value.ClientId)
             .ToDictionary(group => group.Key, group => group.First());
 
@@ -80,7 +82,9 @@ public sealed partial class ClientTransferService(QuoteDbContext db, ClientServi
         if (rows.Count > 2000) return ServiceResult<object>.BadRequest("一次最多匯入 2000 筆客戶。");
 
         var editable = await clients.EditableOwnerFilterAsync(scope, cancellationToken);
-        var existing = await db.Clients.ToListAsync(cancellationToken);
+        // 只比對看得到的客戶；別的部門的客戶即使代碼相同也視為不存在，新增時由資料庫的代碼唯一限制擋下。
+        var existing = await access.VisibleClients(scope).ToListAsync(cancellationToken);
+        var takenCodes = (await db.Clients.IgnoreQueryFilters().Where(value => value.CompanyId == scope.CompanyId).Select(value => value.Code).ToListAsync(cancellationToken)).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var byCode = existing.ToDictionary(value => value.Code, StringComparer.OrdinalIgnoreCase);
         var byTaxId = existing.Where(value => value.TaxId is not null).GroupBy(value => value.TaxId!).ToDictionary(group => group.Key, group => group.First());
         var canCreate = scope.Has("clients", "create");
@@ -106,12 +110,14 @@ public sealed partial class ClientTransferService(QuoteDbContext db, ClientServi
             var client = code is not null ? byCode.GetValueOrDefault(code) : taxId is not null ? byTaxId.GetValueOrDefault(taxId) : null;
             if (client is not null && (!canUpdate || !editable(client.OwnerUserId))) { Fail("沒有修改此客戶的權限。"); continue; }
             if (client is null && !canCreate) { Fail("沒有新增客戶的權限。"); continue; }
+            if (client is null && code is not null && takenCodes.Contains(code)) { Fail("客戶代碼已被使用（可能屬於其他部門）。"); continue; }
+            if (client is null && scope.DepartmentId is null) { Fail("沒有所屬部門，無法新增客戶。"); continue; }
             results.Add(new ClientImportRow(rowNumber, client is null ? "create" : "update", client?.Code ?? code, name, null));
             if (dryRun) continue;
 
             if (client is null)
             {
-                client = new Client { Code = code ?? await numbers.NextClientCodeAsync(scope.CompanyId!.Value, cancellationToken), OwnerUserId = scope.UserId, CreatedBy = scope.UserId };
+                client = new Client { Code = code ?? await numbers.NextClientCodeAsync(scope.CompanyId!.Value, cancellationToken), OwnerUserId = scope.UserId, DepartmentId = scope.DepartmentId, CreatedBy = scope.UserId };
                 db.Clients.Add(client);
                 byCode[client.Code] = client;
             }

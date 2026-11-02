@@ -141,6 +141,9 @@ namespace QuotePlatform.Api.Migrations
                     b.Property<DateTimeOffset?>("DeletedAt")
                         .HasColumnType("datetime(6)");
 
+                    b.Property<Guid?>("DepartmentId")
+                        .HasColumnType("char(36)");
+
                     b.Property<string>("Email")
                         .HasMaxLength(200)
                         .HasColumnType("varchar(200)");
@@ -207,12 +210,16 @@ namespace QuotePlatform.Api.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("DepartmentId");
+
                     b.HasIndex("OwnerUserId");
 
                     b.HasIndex("ParentClientId");
 
                     b.HasIndex("CompanyId", "Code")
                         .IsUnique();
+
+                    b.HasIndex("CompanyId", "DepartmentId");
 
                     b.HasIndex("CompanyId", "Name");
 
@@ -1683,6 +1690,9 @@ namespace QuotePlatform.Api.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("char(36)");
+
                     b.Property<string>("DataScope")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -1891,6 +1901,11 @@ namespace QuotePlatform.Api.Migrations
                         .HasForeignKey("CompanyId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("QuotePlatform.Api.Infrastructure.Department", null)
+                        .WithMany()
+                        .HasForeignKey("DepartmentId")
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("QuotePlatform.Api.Infrastructure.User", null)
                         .WithMany()

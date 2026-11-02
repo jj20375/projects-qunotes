@@ -59,6 +59,7 @@ CREATE TABLE roles (
   DataScope     VARCHAR(20)  NOT NULL DEFAULT 'own',              -- own / department / department_tree / company
   IsSystem      TINYINT(1)   NOT NULL DEFAULT 0,
   IsFullAccess  TINYINT(1)   NOT NULL DEFAULT 0,
+  CreatedBy     CHAR(36)     NULL,                                -- 自訂角色的建立者：只有建立者能在成員表單選用；系統角色與舊資料為 NULL
   CreatedAt     DATETIME(6)  NOT NULL,
   UpdatedAt     DATETIME(6)  NOT NULL,
   PRIMARY KEY (Id),
@@ -312,6 +313,7 @@ CREATE TABLE clients (
   InvoiceAddress  VARCHAR(500) NULL,
   PaymentTerms    VARCHAR(200) NULL,
   OwnerUserId     CHAR(36)     NULL,
+  DepartmentId    CHAR(36)     NULL,                              -- 所屬部門：決定誰看得到這個客戶
   Status          VARCHAR(20)  NOT NULL DEFAULT 'active',   -- active / inactive
   Note            TEXT         NULL,
   CreatedBy       CHAR(36)     NOT NULL,
@@ -325,9 +327,11 @@ CREATE TABLE clients (
   KEY IX_clients_CompanyId_TaxId (CompanyId, TaxId),
   KEY IX_clients_CompanyId_Name (CompanyId, Name),
   KEY IX_clients_CompanyId_OwnerUserId (CompanyId, OwnerUserId),
+  KEY IX_clients_CompanyId_DepartmentId (CompanyId, DepartmentId),
   CONSTRAINT FK_clients_companies FOREIGN KEY (CompanyId) REFERENCES companies (Id) ON DELETE RESTRICT,
   CONSTRAINT FK_clients_parent FOREIGN KEY (ParentClientId) REFERENCES clients (Id) ON DELETE SET NULL,
-  CONSTRAINT FK_clients_owner FOREIGN KEY (OwnerUserId) REFERENCES users (Id) ON DELETE SET NULL
+  CONSTRAINT FK_clients_owner FOREIGN KEY (OwnerUserId) REFERENCES users (Id) ON DELETE SET NULL,
+  CONSTRAINT FK_clients_department FOREIGN KEY (DepartmentId) REFERENCES departments (Id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 CREATE TABLE client_contacts (

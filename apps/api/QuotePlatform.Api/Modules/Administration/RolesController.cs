@@ -14,9 +14,10 @@ public sealed class RolesController(RoleService service) : ScopedControllerBase
 {
     /// <summary>帳號管理指派角色時需要角色清單，因此 company.users 的 assign_role 也可讀取。</summary>
     [HttpGet]
-    public async Task<ActionResult> List(CancellationToken cancellationToken) =>
+    /// <param name="forAssignment">給成員表單選角色用：自訂角色只列出自己建立的。</param>
+    public async Task<ActionResult> List([FromQuery] bool? forAssignment, CancellationToken cancellationToken) =>
         TryCompany("company.roles", "read", out var scope) || TryCompany("company.users", "read", out scope, "assign_role")
-            ? Ok(await service.ListCompanyRolesAsync(scope, cancellationToken))
+            ? Ok(await service.ListCompanyRolesAsync(scope, forAssignment ?? false, cancellationToken))
             : Forbidden();
 
     [HttpGet("{roleId:guid}/permissions")]

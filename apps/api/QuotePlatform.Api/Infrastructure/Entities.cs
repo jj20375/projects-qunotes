@@ -135,6 +135,8 @@ public sealed class Role
     public string DataScope { get; set; } = DataScopes.Own;
     public bool IsSystem { get; set; }
     public bool IsFullAccess { get; set; }
+    /// <summary>自訂角色的建立者；自訂角色只有建立者能在成員表單中選用。系統角色與舊資料為 NULL（不限制）。</summary>
+    public Guid? CreatedBy { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
@@ -216,6 +218,21 @@ public static class DataScopes
     public const string Company = "company";
     public static readonly string[] All = [Own, Department, DepartmentTree, Company];
     public static bool IsValid(string? value) => value is not null && All.Contains(value, StringComparer.Ordinal);
+
+    /// <summary>範圍大小：own &lt; department &lt; department_tree &lt; company；不認得的值當成最大，避免被拿來繞過比較。</summary>
+    public static int Rank(string? value) => Array.IndexOf(All, value) is var index and >= 0 ? index : All.Length;
+
+    /// <summary>建立或指派的資料範圍不可大於操作者自己的資料範圍，否則「建一個全公司範圍的角色再指派給自己」就能繞過資料範圍。</summary>
+    public static bool IsWithin(string? value, string? limit) => Rank(value) <= Rank(limit);
+
+    public static string Label(string? value) => value switch
+    {
+        Own => "自己負責／參與的專案",
+        Department => "本部門",
+        DepartmentTree => "本部門與下層部門",
+        Company => "全公司",
+        _ => value ?? string.Empty,
+    };
 }
 
 /// <summary>個人權限效果常數。</summary>

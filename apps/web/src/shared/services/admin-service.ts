@@ -136,7 +136,9 @@ export interface RoleRow {
 /** company：本公司可見角色；platform：系統角色。 */
 const roleBase = (mode: 'company' | 'platform') => (mode === 'platform' ? '/api/platform/roles' : '/api/admin/roles');
 
-export const listRolesApi = (mode: 'company' | 'platform') => apiRequest<RoleRow[]>(roleBase(mode));
+/** forAssignment：給成員表單選角色用，自訂角色只列出自己建立的；角色管理頁不帶，列出全部。 */
+export const listRolesApi = (mode: 'company' | 'platform', options: { forAssignment?: boolean } = {}) =>
+  apiRequest<RoleRow[]>(roleBase(mode), { query: options.forAssignment ? { forAssignment: true } : undefined });
 export const getRolePermissionsApi = (mode: 'company' | 'platform', roleId: string) => apiRequest<PermissionAllowance[]>(`${roleBase(mode)}/${roleId}/permissions`);
 export const createRoleApi = (body: Record<string, unknown>) => apiRequest<{ id: string }>('/api/admin/roles', { method: 'POST', body });
 export const updateRoleApi = (mode: 'company' | 'platform', roleId: string, body: Record<string, unknown>) =>

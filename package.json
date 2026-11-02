@@ -15,6 +15,7 @@
     "test:file": "npm --prefix file-server test",
     "test:smoke": "node tests/api-smoke.mjs",
     "test:smoke:projects": "node tests/projects-smoke.mjs",
+    "test:smoke:roles": "node tests/roles-scope-smoke.mjs",
     "test:smoke:quotes": "node tests/quotes-smoke.mjs",
     "test:smoke:documents": "node tests/documents-smoke.mjs",
     "test:smoke:dashboard": "node tests/dashboard-smoke.mjs",

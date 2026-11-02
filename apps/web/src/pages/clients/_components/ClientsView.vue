@@ -65,6 +65,7 @@ const columns = [
   col.accessor('taxId', { header: '統編', meta: { width: 110 } }),
   col.accessor('primaryContact', { header: '主要聯絡人', meta: { width: 120 } }),
   col.accessor('phone', { header: '電話', meta: { width: 140 } }),
+  col.accessor('departmentName', { header: '所屬部門', meta: { width: 120 } }),
   col.accessor('ownerName', { header: '業務負責人', meta: { width: 120 } }),
   col.accessor('projectCount', { header: '專案數', meta: { width: 80 } }),
   col.accessor('status', { header: '狀態', meta: { width: 80 } }),
@@ -89,7 +90,7 @@ const columns = [
         <a-button v-if="can('clients', 'create')" type="primary" @click="openClient(null)">新增客戶</a-button>
       </a-space>
     </div>
-    <DataTable :data="clients.data.value?.items ?? []" :columns="columns" row-key="id" :loading="clients.isFetching.value" :pagination="pagination" :scroll-x="900" @change="onTableChange">
+    <DataTable :data="clients.data.value?.items ?? []" :columns="columns" row-key="id" :loading="clients.isFetching.value" :pagination="pagination" :scroll-x="1020" @change="onTableChange">
       <template #cell="{ columnId, record }">
         <template v-if="columnId === 'name'">
           <a @click="openClient(record.id)">{{ record.name }}</a>

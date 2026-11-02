@@ -103,6 +103,15 @@
 
 系統內建角色的代碼、名稱不可修改或刪除；公司可自建角色，但不得超過 `company-admin`。
 
+**資料範圍上限**：操作者自己的資料範圍（own &lt; department &lt; department_tree &lt; company）是上限，否則有角色管理權限的人可以建立「全公司」角色再指派給自己，繞過資料範圍。後端（`RoleService`、`MemberService`）強制：
+- 建立或修改角色時，角色的資料範圍不可大於自己的；改成更小的可以。
+- 修改、刪除或調整權限的角色，資料範圍不可比自己的大（公司管理員為全公司範圍，不受限）。
+- 指派角色時，角色的資料範圍不可大於自己的（和「權限不可超過自己」並列檢查）。
+- 設定或新增成員時的個別資料範圍（`DataScopeOverride`）也不可大於自己的；清除個別設定不受限。
+- 前端的資料範圍下拉與角色下拉會把超過的選項停用，後端才是安全邊界。
+
+自訂角色只有**建立者**能指派：成員表單的角色選單（`GET /api/admin/roles?forAssignment=true`）只列出系統內建角色與自己建立的自訂角色，後端指派時也會檢查（`roles.CreatedBy`）；角色管理頁（不帶參數）仍列出全部，讓管理員能維護同事建立的角色。成員目前的角色是別人建立的自訂角色時，改其他欄位不受影響。規則上線前建立、沒有建立者的舊自訂角色不限制。
+
 ## 4. 資料範圍（Data Scope）
 
 權限回答「能不能做這種操作」，資料範圍回答「能對哪些專案做」。
@@ -116,7 +125,13 @@
 
 - 有效資料範圍 = `company_memberships.DataScopeOverride` ?? `roles.DataScope`。
 - 報價、訂單、保固、發票、附件、Dashboard 都**繼承所屬專案的可見性**，由共用的 `ProjectAccessService.VisibleProjects()` 產生 `IQueryable<Project>` 給各模組 join，不各自重寫條件。
-- 客戶：所有有 `clients:read` 的人都可看公司全部客戶（報價時需要選），但 `clients:update` 只限 `company` 範圍或客戶的 `OwnerUserId`。
+- 客戶：可見範圍看**客戶的所屬部門**（`clients.DepartmentId`），不看負責人：
+  - `own`（本人）與 `department`（部門）：只看自己部門的客戶，看不到上層或其他部門的。
+  - `department_tree`：自己部門與所有下層部門的客戶。
+  - `company`：全部。
+  - 看不到的客戶，API 一律回 404（不透露是否存在），也不能用來建立專案或改選報價的客戶。專案本身的客戶不受此限：跨部門合作的專案成員仍看得到專案上的客戶名稱、仍能在該專案報價。
+  - 所屬部門預設為建立者的部門；只有 `company` 範圍且有 `clients:update` 的管理者可以指定或移動（業務不能指定其他部門）。移走後原部門的人立刻看不到。
+  - 修改權仍以負責人為準：`clients:update` 只限 `company` 範圍或客戶的 `OwnerUserId`（見下）。
 - 專案成員角色可再降級寫入：
   - `manager`：依權限可讀寫，並可管理成員（仍需 `projects:assign_member`）
   - `member`：依權限可讀寫
@@ -134,7 +149,7 @@
 - `AllowedDepartmentIdsAsync(scope)`：建立或移動專案時可選的部門；company 不限，department／own 只有自己部門，department_tree 為自己部門與下層。避免把專案建到自己看不到的部門。
 - 沒有部門的帳號，department／department_tree 自動退回 own。
 
-客戶修改權（`ClientService`）：company 全部；department／department_tree 為「負責人是自己或可見部門的成員」的客戶；own 只有自己負責的；沒有負責人的客戶只有 company 範圍可改。客戶列表的「專案數」是公司內總數，不套資料範圍。
+客戶修改權（`ClientService`，在看得到的客戶之內再判斷）：company 全部；department／department_tree 為「負責人是自己或可見部門的成員」的客戶；own 只有自己負責的；沒有負責人的客戶只有 company 範圍可改。客戶列表的「專案數」是公司內總數，不套資料範圍。
 
 報價（第三階段）：報價可見性與寫入權完全繼承所屬專案（`QuoteService.LoadAsync` 經 `ProjectAccessService`）。`quotes:approve` 可以核准或退回任何**看得到**的報價，不需要是專案成員；主管通常靠 department_tree 範圍看到下屬報價。`quotes:view_cost` 控制報價明細成本、成本合計、毛利與品項預設成本的讀寫。匯入工作只有上傳者本人可讀取與確認。
 

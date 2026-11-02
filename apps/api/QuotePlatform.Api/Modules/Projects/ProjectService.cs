@@ -5,7 +5,7 @@ using QuotePlatform.Api.Modules.Common;
 namespace QuotePlatform.Api.Modules.Projects;
 
 /// <summary>專案搜尋、CRUD、狀態流程與成員。</summary>
-public sealed class ProjectService(QuoteDbContext db, ProjectAccessService access, NumberSequenceService numbers, AuditService audit)
+public sealed class ProjectService(QuoteDbContext db, ProjectAccessService access, ClientAccessService clientAccess, NumberSequenceService numbers, AuditService audit)
 {
     private static readonly string[] SortFields = ["createdAt", "projectNo", "name", "startDate", "endDate", "expectedAmount", "contractAmount", "status"];
 
@@ -314,7 +314,8 @@ public sealed class ProjectService(QuoteDbContext db, ProjectAccessService acces
         if (string.IsNullOrWhiteSpace(input.Name)) return "請輸入專案名稱。";
         if (input.ClientId is not Guid clientId) return "請選擇客戶。";
         // 停用的客戶不能開新專案，但既有專案仍可維持原客戶。
-        if (clientId != current?.ClientId && !await db.Clients.AnyAsync(value => value.Id == clientId && value.Status == "active", cancellationToken)) return "客戶不存在或已停用。";
+        // 只能選自己看得到的客戶（依資料範圍與客戶所屬部門）。
+        if (clientId != current?.ClientId && !await clientAccess.VisibleClients(scope).AnyAsync(value => value.Id == clientId && value.Status == "active", cancellationToken)) return "客戶不存在、已停用，或不在您可見的範圍內。";
         if (input.StartDate is DateOnly start && input.EndDate is DateOnly end && start > end) return "開始日期不可晚於結束日期。";
         if (input.ExpectedAmount < 0 || input.ContractAmount < 0 || input.ContractTotal < 0) return "金額不可為負數。";
         if (!await db.CompanyMemberships.AnyAsync(value => value.UserId == ownerUserId && value.IsActive, cancellationToken)) return "負責人必須是公司內啟用中的成員。";

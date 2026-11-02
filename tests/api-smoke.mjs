@@ -259,6 +259,103 @@ await step('自訂角色不可超過 company-admin；角色權限異動讓成員
   assert.ok(hasGrant(me, 'projects', 'read') && !hasGrant(me, 'projects', 'create'));
 });
 
+await step('自訂角色只有建立者能選用；測完清掉自己建立的角色', async () => {
+  const roles = (await call('GET', '/api/admin/roles', { token: demoAdmin.token })).data;
+  const custom = roles.find((role) => role.code === `custom-${suffix}`);
+  const departments = (await call('GET', '/api/admin/departments', { token: demoAdmin.token })).data;
+  const admin2Account = `admin2-${suffix}`;
+  const admin2 = await call('POST', '/api/admin/users', {
+    token: demoAdmin.token,
+    body: { account: admin2Account, displayName: '第二位管理員', password: seedPassword, departmentId: departments.find((d) => d.code === 'SALES').id, roleId: roles.find((r) => r.code === 'company-admin').id },
+  });
+  assert.equal(admin2.status, 201, JSON.stringify(admin2.data));
+  const admin2Token = (await login(admin2Account)).token;
+
+  // 成員表單的角色選單（forAssignment）：建立者看得到自訂角色，其他人看不到；角色管理頁仍列出全部
+  const assignable = async (token) => (await call('GET', '/api/admin/roles?forAssignment=true', { token })).data.map((role) => role.code);
+  assert.ok((await assignable(demoAdmin.token)).includes(`custom-${suffix}`), '建立者看得到');
+  assert.ok(!(await assignable(admin2Token)).includes(`custom-${suffix}`), '其他管理員不列出別人的自訂角色');
+  assert.ok((await assignable(admin2Token)).includes('sales'), '系統角色照常列出');
+  assert.ok((await call('GET', '/api/admin/roles', { token: admin2Token })).data.some((role) => role.code === `custom-${suffix}`), '角色管理頁仍列出全部');
+
+  // 後端也擋：其他人不能指派別人建立的自訂角色；成員目前就是這個角色時，改其他欄位不受影響
+  const salesRoleId = roles.find((r) => r.code === 'sales').id;
+  assert.equal((await call('PATCH', `/api/admin/users/${memberId}`, { token: admin2Token, body: { displayName: '改名不受影響' } })).status, 200, '成員已是這個自訂角色時，其他人仍能改其他欄位');
+  assert.equal((await call('PATCH', `/api/admin/users/${memberId}`, { token: demoAdmin.token, body: { roleId: salesRoleId } })).status, 200);
+  const blocked = await call('PATCH', `/api/admin/users/${memberId}`, { token: admin2Token, body: { roleId: custom.id } });
+  assert.equal(blocked.status, 400, JSON.stringify(blocked.data));
+  assert.equal((await call('POST', '/api/admin/users', { token: admin2Token, body: { account: `blocked-${suffix}`, displayName: 'x', password: seedPassword, departmentId: departments.find((d) => d.code === 'SALES').id, roleId: custom.id } })).status, 400);
+
+  // 清理：刪除測試用的自訂角色（成員前面已改回業務）、停用第二位管理員
+  assert.equal((await call('DELETE', `/api/admin/roles/${custom.id}`, { token: demoAdmin.token })).status, 204);
+  const members = (await call('GET', `/api/admin/users?keyword=${admin2Account}`, { token: demoAdmin.token })).data.items;
+  assert.equal((await call('PATCH', `/api/admin/users/${members[0].membershipId}`, { token: demoAdmin.token, body: { isActive: false } })).status, 200);
+});
+
+await step('資料範圍上限：建角色、指派角色、個別資料範圍都不能大於自己的', async () => {
+  // 部門範圍、可管角色與成員的管理者：不能靠建立全公司範圍的角色再指派給自己來提升可見範圍
+  const roles = (await call('GET', '/api/admin/roles', { token: demoAdmin.token })).data;
+  const departments = (await call('GET', '/api/admin/departments', { token: demoAdmin.token })).data;
+  const full = (code, options = []) => ({ code, perRead: true, perCreate: true, perUpdate: true, perDelete: true, options });
+  const manager = await call('POST', '/api/admin/roles', {
+    token: demoAdmin.token,
+    body: { code: `scoped-${suffix}`, name: '部門角色管理者', dataScope: 'department', permissions: [
+      full('company.roles'),
+      { ...full('company.users'), perDelete: false, options: ['assign_role'] },
+      // 讀取權限涵蓋「唯讀」角色，才能把成員指派成唯讀；這樣被擋下的原因只會是資料範圍。
+      ...['dashboard', 'clients', 'products', 'projects', 'quotes', 'orders', 'warranties', 'invoices'].map((code) => ({ code, perRead: true, perCreate: false, perUpdate: false, perDelete: false, options: [] })),
+    ] },
+  });
+  assert.equal(manager.status, 201, JSON.stringify(manager.data));
+  const account = `scoped-${suffix}`;
+  const member = await call('POST', '/api/admin/users', {
+    token: demoAdmin.token,
+    body: { account, displayName: '部門角色管理者', password: seedPassword, departmentId: departments.find((d) => d.code === 'SALES-1').id, roleId: manager.data.id },
+  });
+  assert.equal(member.status, 201, JSON.stringify(member.data));
+  const token = (await login(account)).token;
+  const role = (code, dataScope) => call('POST', '/api/admin/roles', { token, body: { code, name: code, dataScope, permissions: [] } });
+
+  const tooWide = await role(`wide-${suffix}`, 'company');
+  assert.equal(tooWide.status, 400, '不能建立全公司範圍的角色');
+  assert.match(tooWide.data.message, /資料範圍不可大於自己/);
+  assert.equal((await role(`tree-${suffix}`, 'department_tree')).status, 400, '不能建立含下層部門的角色');
+  const same = await role(`dept-${suffix}`, 'department');
+  assert.equal(same.status, 201, JSON.stringify(same.data));
+  const narrower = await role(`own-${suffix}`, 'own');
+  assert.equal(narrower.status, 201, '同範圍與更小的範圍可以');
+  assert.equal((await call('PATCH', `/api/admin/roles/${same.data.id}`, { token, body: { dataScope: 'company' } })).status, 400, '不能把自己的角色改成更大的範圍');
+  assert.equal((await call('PATCH', `/api/admin/roles/${same.data.id}`, { token, body: { dataScope: 'own' } })).status, 200, '改成更小的可以');
+
+  // 別人建立、範圍比自己大的角色：不能改、不能刪、不能指派
+  const wideByAdmin = await call('POST', '/api/admin/roles', { token: demoAdmin.token, body: { code: `wide-admin-${suffix}`, name: '全公司唯讀', dataScope: 'company', permissions: [{ ...full('dashboard'), perCreate: false, perUpdate: false, perDelete: false }] } });
+  assert.equal(wideByAdmin.status, 201);
+  assert.equal((await call('PATCH', `/api/admin/roles/${wideByAdmin.data.id}`, { token, body: { name: '偷改' } })).status, 400);
+  assert.equal((await call('DELETE', `/api/admin/roles/${wideByAdmin.data.id}`, { token })).status, 400);
+  const target = await call('POST', '/api/admin/users', { token, body: { account: `scoped-t-${suffix}`, displayName: '被指派者', password: seedPassword, departmentId: departments.find((d) => d.code === 'SALES-1').id, roleId: roles.find((r) => r.code === 'viewer').id } });
+  assert.equal(target.status, 201, JSON.stringify(target.data));
+  const assignWide = await call('PATCH', `/api/admin/users/${target.data.membershipId}`, { token, body: { roleId: wideByAdmin.data.id } });
+  assert.equal(assignWide.status, 400, '不能指派範圍更大的角色');
+  assert.match(assignWide.data.message, /資料範圍.*不能指派/);
+  const overrideWide = await call('PATCH', `/api/admin/users/${target.data.membershipId}`, { token, body: { dataScopeOverride: 'company' } });
+  assert.equal(overrideWide.status, 400, '不能設定更大的個別資料範圍');
+  assert.match(overrideWide.data.message, /個人資料範圍不可大於自己/);
+  assert.equal((await call('PATCH', `/api/admin/users/${target.data.membershipId}`, { token, body: { dataScopeOverride: 'department' } })).status, 200, '同範圍可以');
+  const createdOverride = await call('POST', '/api/admin/users', { token, body: { account: `scoped-o-${suffix}`, displayName: 'x', password: seedPassword, departmentId: departments.find((d) => d.code === 'SALES-1').id, roleId: roles.find((r) => r.code === 'viewer').id, dataScopeOverride: 'company' } });
+  assert.equal(createdOverride.status, 400, '新增成員時也不能指定更大的範圍');
+
+  // 全公司範圍的管理者不受限
+  assert.equal((await call('POST', '/api/admin/roles', { token: demoAdmin.token, body: { code: `wide2-${suffix}`, name: 'x', dataScope: 'company', permissions: [] } })).status, 201);
+
+  // 清理：刪掉這一步建立的角色與成員改回
+  for (const id of [same.data.id, narrower.data.id, wideByAdmin.data.id]) await call('DELETE', `/api/admin/roles/${id}`, { token: demoAdmin.token });
+  const wide2 = (await call('GET', '/api/admin/roles', { token: demoAdmin.token })).data.find((r) => r.code === `wide2-${suffix}`);
+  await call('DELETE', `/api/admin/roles/${wide2.id}`, { token: demoAdmin.token });
+  const users = (await call('GET', `/api/admin/users?keyword=scoped-&pageSize=50`, { token: demoAdmin.token })).data.items.filter((u) => u.account.endsWith(suffix));
+  for (const user of users) await call('PATCH', `/api/admin/users/${user.membershipId}`, { token: demoAdmin.token, body: { isActive: false, roleId: roles.find((r) => r.code === 'viewer').id } });
+  await call('DELETE', `/api/admin/roles/${manager.data.id}`, { token: demoAdmin.token }); // 還有成員使用時會被拒絕，留著也無妨
+});
+
 await step('系統角色不可由公司修改', async () => {
   const roles = (await call('GET', '/api/admin/roles', { token: demoAdmin.token })).data;
   const sales = roles.find((role) => role.code === 'sales');

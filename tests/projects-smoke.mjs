@@ -91,15 +91,48 @@ await step('客戶驗證：統編格式、主要聯絡人只能一位', async ()
   assert.equal(twoPrimary.status, 400);
 });
 
-await step('業務看得到全部客戶，但不能修改別人負責的客戶', async () => {
-  const created = await call('POST', '/api/clients', { token: admin, body: { name: `${suffix} 客戶乙` } });
-  adminClientId = created.data.id;
-  const detail = await call('GET', `/api/clients/${adminClientId}`, { token: sales });
-  assert.equal(detail.status, 200);
-  assert.equal(detail.data.canEdit, false);
-  assert.equal((await call('PUT', `/api/clients/${adminClientId}`, { token: sales, body: { name: 'hack' } })).status, 403);
-  const list = await call('GET', `/api/clients?keyword=${suffix}`, { token: sales });
-  assert.equal(list.data.total, 2);
+await step('客戶依所屬部門隔離：本人與部門看自己部門、部門樹含下層、全公司看全部；只有全公司範圍能移動', async () => {
+  // 業務（業務一課）建立的客戶預設歸在自己的部門；指定其他部門會被拒絕。
+  const detailA = (await call('GET', `/api/clients/${salesClientId}`, { token: sales })).data;
+  assert.equal(detailA.departmentName, '業務一課');
+  assert.equal(detailA.canChangeDepartment, false);
+  const spoof = await call('POST', '/api/clients', { token: sales, body: { name: 'x', departmentId: departments['財務部'] } });
+  assert.equal(spoof.status, 403, '業務不能指定其他部門');
+
+  // 公司管理員（全公司範圍）建立財務部的客戶 B、業務部（業務一課的上層）的客戶 C。
+  const finance = await call('POST', '/api/clients', { token: admin, body: { name: `${suffix} 客戶乙`, departmentId: departments['財務部'] } });
+  assert.equal(finance.status, 201, JSON.stringify(finance.data));
+  adminClientId = finance.data.id;
+  const salesDept = await call('POST', '/api/clients', { token: admin, body: { name: `${suffix} 客戶丙`, departmentId: departments['業務部'] } });
+  assert.equal(salesDept.status, 201);
+  const upperClientId = salesDept.data.id;
+
+  const ids = async (token) => (await call('GET', `/api/clients?keyword=${suffix}&pageSize=100`, { token })).data.items.map((item) => item.name.replace(`${suffix} `, '')).sort();
+  assert.deepEqual(await ids(sales), ['客戶甲'], '業務一課只看到自己部門的客戶，看不到上層部門與其他部門的');
+  assert.deepEqual(await ids(manager), ['客戶丙', '客戶甲'], '業務部（部門樹）看到自己與下層業務一課，看不到財務部');
+  assert.deepEqual(await ids(admin), ['客戶丙', '客戶乙', '客戶甲'], '全公司範圍看全部');
+  assert.equal((await call('GET', `/api/clients/${adminClientId}`, { token: sales })).status, 404, '看不到的客戶一律 404');
+  assert.equal((await call('GET', `/api/clients/${upperClientId}`, { token: sales })).status, 404);
+  assert.equal((await call('GET', `/api/clients/${salesClientId}`, { token: manager })).status, 200);
+  assert.equal((await call('PUT', `/api/clients/${adminClientId}`, { token: sales, body: { name: 'hack' } })).status, 404);
+
+  // 看不到的客戶不能拿來建專案；報價的客戶選擇也一樣。
+  const hidden = await call('POST', '/api/projects', { token: sales, body: { name: `${suffix} x`, clientId: adminClientId } });
+  assert.equal(hidden.status, 400);
+
+  // 只有全公司範圍的管理者能移動所屬部門；移走後原部門的人立刻看不到。
+  assert.equal((await call('PUT', `/api/clients/${salesClientId}`, { token: sales, body: { name: `${suffix} 客戶甲`, departmentId: departments['財務部'] } })).status, 403);
+  assert.equal((await call('GET', `/api/clients/${adminClientId}`, { token: admin })).data.canChangeDepartment, true);
+  const moved = await call('PUT', `/api/clients/${salesClientId}`, { token: admin, body: { name: `${suffix} 客戶甲`, departmentId: departments['財務部'] } });
+  assert.equal(moved.status, 200, JSON.stringify(moved.data));
+  assert.equal((await call('GET', `/api/clients/${salesClientId}`, { token: sales })).status, 404, '被移走的客戶原部門看不到');
+  assert.deepEqual(await ids(sales), []);
+  assert.equal((await call('PUT', `/api/clients/${salesClientId}`, { token: admin, body: { name: `${suffix} 客戶甲`, departmentId: departments['業務一課'] } })).status, 200);
+  assert.deepEqual(await ids(sales), ['客戶甲'], '移回後恢復');
+
+  // 匯出只含看得到的客戶（匯入也只比對看得到的）
+  const csvAdmin = await fetch(`${baseUrl}/api/clients/export`, { headers: { authorization: `Bearer ${admin}` } });
+  assert.equal(csvAdmin.status, 200);
 });
 
 await step('業務建立專案：預設自己部門、專案編號格式', async () => {

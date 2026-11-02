@@ -21,17 +21,17 @@ import {
   type MemberRow,
 } from '@/shared/services/admin-service';
 import { dataColumns } from '@/shared/table/data-table';
-import { DATA_SCOPE_LABELS } from '@/shared/types/permissions';
+import { DATA_SCOPE_LABELS, dataScopeOptions as buildDataScopeOptions, exceedsDataScope } from '@/shared/types/permissions';
 import UserPermissionsDrawer from './UserPermissionsDrawer.vue';
 
-const { can, canOption } = useMe();
+const { me, can, canOption } = useMe();
 const canAssignRole = computed(() => canOption('company.users', 'assign_role'));
 const queryClient = useQueryClient();
 const keywordInput = ref('');
 const applied = reactive({ keyword: '', page: 1, pageSize: 20 });
 const members = useQuery({ queryKey: ['members', applied], queryFn: () => listMembersApi({ ...applied }), placeholderData: keepPreviousData });
 const departments = useQuery({ queryKey: ['departments'], queryFn: listDepartmentsApi });
-const roles = useQuery({ queryKey: ['roles', 'company'], queryFn: () => listRolesApi('company'), enabled: canAssignRole });
+const roles = useQuery({ queryKey: ['roles', 'company'], queryFn: () => listRolesApi('company', { forAssignment: true }), enabled: canAssignRole });
 
 function search() {
   applied.keyword = keywordInput.value.trim();
@@ -49,8 +49,16 @@ const departmentTree = computed(() => {
     rows.filter((row: DepartmentRow) => row.parentId === parentId && row.isActive).map((row) => ({ value: row.id, title: row.name, children: build(row.id) }));
   return build(null);
 });
-const roleOptions = computed(() => (roles.data.value ?? []).map((role) => ({ value: role.id, label: role.name })));
-const dataScopeOptions = [{ value: '', label: '依角色預設' }, ...Object.entries(DATA_SCOPE_LABELS).map(([value, label]) => ({ value, label }))];
+// 自訂角色只列出自己建立的；編輯成員時，若成員目前的角色是別人建立的自訂角色，仍要顯示出來才不會變成一串代碼。
+const roleOptions = computed(() => {
+  // 資料範圍比自己大的角色不能指派（停用顯示，後端也會檢查）。
+  const options = (roles.data.value ?? []).map((role) => ({ value: role.id, label: role.name, disabled: exceedsDataScope(role.dataScope, me.value?.scope.dataScope) }));
+  const current = editing.value;
+  if (current && !options.some((option) => option.value === current.roleId)) options.push({ value: current.roleId, label: `${current.roleName}（其他人建立的自訂角色）`, disabled: false });
+  return options;
+});
+// 個別資料範圍不可大於自己的（後端也會檢查）。
+const dataScopeOptions = computed(() => buildDataScopeOptions(me.value?.scope.dataScope, [{ value: '', label: '依角色預設' }]));
 
 const formOpen = ref(false);
 const editing = ref<MemberRow | null>(null);

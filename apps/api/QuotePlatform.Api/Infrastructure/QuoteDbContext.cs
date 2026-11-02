@@ -459,6 +459,8 @@ public sealed class QuoteDbContext(DbContextOptions<QuoteDbContext> options, Com
             entity.HasIndex(value => new { value.CompanyId, value.TaxId });
             entity.HasIndex(value => new { value.CompanyId, value.Name });
             entity.HasIndex(value => new { value.CompanyId, value.OwnerUserId });
+            entity.HasIndex(value => new { value.CompanyId, value.DepartmentId });
+            entity.HasOne<Department>().WithMany().HasForeignKey(value => value.DepartmentId).OnDelete(DeleteBehavior.SetNull);
             entity.HasOne<Company>().WithMany().HasForeignKey(value => value.CompanyId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Client>().WithMany().HasForeignKey(value => value.ParentClientId).OnDelete(DeleteBehavior.SetNull);
             entity.HasOne<User>().WithMany().HasForeignKey(value => value.OwnerUserId).OnDelete(DeleteBehavior.SetNull);
