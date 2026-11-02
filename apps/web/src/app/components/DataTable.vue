@@ -23,6 +23,8 @@
  * - `#expanded`：有這個 slot 時，每列左邊出現展開鈕，展開後在下方顯示內容。
  * - `get-sub-rows`：樹狀資料（部門、報價版本）；樹狀的展開鈕在第一欄。
  * - `client-page-size`：只給「已完整載入的小型預覽」（匯入檔預覽）在前端切頁；一般列表不可使用。
+ * - `v-model:selected-keys`：勾選列。有這個 prop 時左邊出現勾選欄，值是列的 row-key；換頁時由頁面保留已勾選的 key，
+ *   所以可以跨頁勾選。`row-selectable` 決定哪些列不能勾（例如已經在專案裡的人）。
  */
 import { computed, Comment, defineComponent, Fragment, h, ref, Text, type PropType, type VNode } from 'vue';
 import { theme } from 'ant-design-vue';
@@ -64,10 +66,12 @@ const props = withDefaults(
     getSubRows?: (row: T) => T[] | undefined;
     defaultExpandAll?: boolean;
     emptyText?: string;
+    selectedKeys?: string[];
+    rowSelectable?: (row: T) => boolean;
   }>(),
   { rowKey: 'id' as never, size: 'middle', pagination: false, emptyText: '沒有資料' },
 );
-const emit = defineEmits<{ change: [state: TableChange] }>();
+const emit = defineEmits<{ change: [state: TableChange]; 'update:selectedKeys': [keys: string[]] }>();
 const slots = defineSlots<{
   /** 自訂儲存格內容；沒有輸出內容的欄位顯示欄位值。`columnId` 是欄位的 id（accessor 的名稱或 display 欄位的 id）。 */
   cell?(props: { columnId: string; record: T; value: unknown; index: number }): VNode[];
@@ -126,7 +130,30 @@ const table = useTable<DataTableFeatures, T>({
 });
 
 const rows = computed(() => table.getRowModel().rows);
-const leafColumnCount = computed(() => table.getAllLeafColumns().length + (hasDetail.value ? 1 : 0));
+const hasSelection = computed(() => props.selectedKeys !== undefined);
+const leafColumnCount = computed(() => table.getAllLeafColumns().length + (hasDetail.value ? 1 : 0) + (hasSelection.value ? 1 : 0));
+
+// ---------- 勾選 ----------
+const selectedSet = computed(() => new Set(props.selectedKeys ?? []));
+const canSelect = (row: T) => props.rowSelectable?.(row) ?? true;
+/** 這一頁可以勾選的列的 key。 */
+const pageKeys = computed(() => rows.value.filter((row) => canSelect(row.original as T)).map((row) => row.id));
+const pageAllSelected = computed(() => pageKeys.value.length > 0 && pageKeys.value.every((key) => selectedSet.value.has(key)));
+const pageSomeSelected = computed(() => !pageAllSelected.value && pageKeys.value.some((key) => selectedSet.value.has(key)));
+function toggleRow(key: string, checked: boolean) {
+  const next = new Set(selectedSet.value);
+  if (checked) next.add(key);
+  else next.delete(key);
+  emit('update:selectedKeys', [...next]);
+}
+function togglePage(checked: boolean) {
+  const next = new Set(selectedSet.value);
+  for (const key of pageKeys.value) {
+    if (checked) next.add(key);
+    else next.delete(key);
+  }
+  emit('update:selectedKeys', [...next]);
+}
 
 // ---------- 分頁 ----------
 const pager = computed(() => {
@@ -195,6 +222,9 @@ const sortLabel = (order: false | 'asc' | 'desc') => (order === 'asc' ? 'ascendi
         <table class="dt-table" :style="{ minWidth: scrollX ? `${scrollX}px` : undefined }">
           <thead>
             <tr v-for="group in table.getHeaderGroups()" :key="group.id">
+              <th v-if="hasSelection" class="dt-select-col" :class="{ 'dt-sticky-head': !!scrollY }">
+                <a-checkbox :checked="pageAllSelected" :indeterminate="pageSomeSelected" :disabled="!pageKeys.length" aria-label="勾選這一頁" @change="(event: { target: { checked: boolean } }) => togglePage(event.target.checked)" />
+              </th>
               <th v-if="hasDetail" class="dt-expand-col" :class="{ 'dt-sticky-head': !!scrollY }" aria-label="展開" />
               <th
                 v-for="header in group.headers"
@@ -215,7 +245,15 @@ const sortLabel = (order: false | 'asc' | 'desc') => (order === 'asc' ? 'ascendi
           </thead>
           <tbody>
             <template v-for="row in rows" :key="row.id">
-              <tr class="dt-row" :class="{ 'dt-row-expanded': row.getIsExpanded() }">
+              <tr class="dt-row" :class="{ 'dt-row-expanded': row.getIsExpanded(), 'dt-row-selected': selectedSet.has(row.id) }">
+                <td v-if="hasSelection" class="dt-select-col">
+                  <a-checkbox
+                    :checked="selectedSet.has(row.id)"
+                    :disabled="!canSelect(row.original as T)"
+                    aria-label="勾選"
+                    @change="(event: { target: { checked: boolean } }) => toggleRow(row.id, event.target.checked)"
+                  />
+                </td>
                 <td v-if="hasDetail" class="dt-expand-col">
                   <button
                     type="button"
@@ -318,6 +356,13 @@ export default { inheritAttrs: true };
 }
 .dt-row:hover > td {
   background: var(--dt-hover-bg);
+}
+.dt-select-col {
+  width: 48px;
+  text-align: center;
+}
+.dt-row-selected > td {
+  background: color-mix(in srgb, var(--dt-primary) 6%, var(--dt-bg));
 }
 .dt-detail > td {
   background: var(--dt-head-bg);

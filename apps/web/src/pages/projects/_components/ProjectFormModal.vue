@@ -10,12 +10,14 @@ import { message } from 'ant-design-vue';
 import { useQuery } from '@tanstack/vue-query';
 import ClientSelect from '@/app/components/ClientSelect.vue';
 import UserSelect from '@/app/components/UserSelect.vue';
+import MemberPickerModal from '@/app/components/MemberPickerModal.vue';
 import { useMe } from '@/app/composables/use-me';
 import {
   createProjectApi,
   listDirectoryDepartmentsApi,
   updateProjectApi,
   type ProjectDetail,
+  type DirectoryMember,
   type ProjectMember,
 } from '@/shared/services/business-service';
 
@@ -42,6 +44,14 @@ const form = reactive({
   description: '',
 });
 const members = ref<ProjectMember[]>([]);
+const pickerOpen = ref(false);
+const projectRoleOptions = [{ value: 'manager', label: '管理' }, { value: 'member', label: '成員' }, { value: 'viewer', label: '檢視' }];
+// 從名單勾選的人加進成員清單（預設「成員」），已在清單裡的不重複加入。
+function addMembers(picked: DirectoryMember[]) {
+  for (const user of picked) {
+    if (!members.value.some((member) => member.userId === user.userId)) members.value.push({ userId: user.userId, displayName: user.displayName, departmentName: user.departmentName, projectRole: 'member' });
+  }
+}
 const saving = ref(false);
 const isEdit = computed(() => !!props.project);
 const canAssignMembers = computed(() => canOption('projects', 'assign_member'));
@@ -85,7 +95,8 @@ async function save() {
       contractAmount: form.contractAmount,
       contractTotal: form.contractTotal,
       description: form.description,
-      members: isEdit.value ? undefined : members.value.filter((member) => member.userId),
+      // 負責人不用列為成員（中途換了負責人時，排除掉已在清單裡的他）。
+      members: isEdit.value ? undefined : members.value.filter((member) => member.userId && member.userId !== form.ownerUserId),
     };
     let id = props.project?.id;
     if (isEdit.value) await updateProjectApi(id!, body);
@@ -143,18 +154,25 @@ const moneyParser = (value: string) => value.replace(/,/g, '');
 
       <template v-if="!isEdit && canAssignMembers">
         <a-divider orientation="left" plain>專案成員（負責人不用加入）</a-divider>
-        <div v-for="(member, index) in members" :key="index" class="member-row">
-          <UserSelect :value="member.userId || undefined" :exclude-ids="form.ownerUserId ? [form.ownerUserId] : []" placeholder="選擇成員" @update:value="(value) => (member.userId = value ?? '')" />
-          <a-select v-model:value="member.projectRole" :options="[{ value: 'manager', label: '管理' }, { value: 'member', label: '成員' }, { value: 'viewer', label: '檢視' }]" />
+        <div v-for="(member, index) in members" :key="member.userId" class="member-row">
+          <span class="member-name">{{ member.displayName }}<span v-if="member.departmentName" class="member-dept">（{{ member.departmentName }}）</span></span>
+          <a-select v-model:value="member.projectRole" :options="projectRoleOptions" />
           <a-button type="text" danger @click="members.splice(index, 1)">移除</a-button>
         </div>
-        <a-button type="dashed" block @click="members.push({ userId: '', projectRole: 'member' })">新增成員</a-button>
+        <a-button type="dashed" block @click="pickerOpen = true">從名單選擇成員</a-button>
+        <MemberPickerModal :open="pickerOpen" :exclude-ids="[form.ownerUserId, ...members.map((member) => member.userId)].filter((id): id is string => !!id)" @close="pickerOpen = false" @pick="addMembers" />
       </template>
     </a-form>
   </a-modal>
 </template>
 
 <style scoped>
+.member-name {
+  align-self: center;
+}
+.member-dept {
+  color: #8c8c8c;
+}
 .member-row {
   display: grid;
   grid-template-columns: 1fr 120px auto;

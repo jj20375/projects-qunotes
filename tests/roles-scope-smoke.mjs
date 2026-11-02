@@ -1,7 +1,7 @@
 /**
  * 角色 × 部門的資料範圍矩陣驗證：每個內建角色（業務、業務主管、會計、唯讀、公司管理員）與「本部門」自訂角色，
  * 在一個獨立的測試部門樹裡，各自看得到哪些客戶、專案、報價與訂單，以及不能做哪些寫入；
- * 另外驗證個別資料範圍覆寫與成員換部門會立刻改變可見範圍。
+ * 另外驗證個別資料範圍覆寫與成員換部門會立刻改變可見範圍，以及選專案成員的名單（部門、角色、姓名篩選與分頁）。
  *
  * 測試部門樹（建在示範公司最上層部門底下）：
  *   總部（TOP）── 甲課（A）
@@ -217,13 +217,50 @@ await step('成員換部門：業務從甲課調到乙課，客戶改看乙課�
   assert.deepEqual(await visibleProjects(tokens.viewer), []);
 });
 
-await step('清理：停用測試帳號、刪除自訂角色（部門與資料保留，名稱含執行代號）', async () => {
+await step('專案成員名單：依部門（含下層）、角色、姓名篩選，後端分頁；跨部門（會計）也能加入專案', async () => {
+  const list = async (token, query) => {
+    const params = new URLSearchParams({ keyword: `-${suffix}`, ...query });
+    const result = await call('GET', `/api/directory/members?${params}`, { token });
+    assert.equal(result.status, 200, JSON.stringify(result.data));
+    return result.data;
+  };
+  const names = (data) => data.items.map((item) => item.displayName.replace(`-${suffix}`, '')).sort();
+  // 業務 A2 已調到乙課，仍在總部底下
+  assert.deepEqual(names(await list(tokens.salesA1, { departmentId: dept.TOP, pageSize: '50' })), ['deptRole', 'manager', 'salesA1', 'salesA2', 'salesB', 'viewer']);
+  assert.deepEqual(names(await list(tokens.salesA1, { departmentId: dept.TOP, includeSubDepartments: 'false' })), ['manager'], '不含下層時只有總部本身');
+  const roles = await ok(call('GET', '/api/directory/roles', { token: tokens.salesA1 }));
+  assert.ok(roles.some((role) => role.name === '會計'), '任何成員都能讀角色名稱供篩選');
+  const accountantRole = roles.find((role) => role.name === '會計').id;
+  const accountants = await list(tokens.salesA1, { roleId: accountantRole });
+  assert.deepEqual(names(accountants), ['accountant']);
+  assert.equal(accountants.items[0].roleName, '會計');
+  // 分頁與 total
+  const first = await list(tokens.salesA1, { pageSize: '4', page: '1' });
+  const second = await list(tokens.salesA1, { pageSize: '4', page: '2' });
+  assert.equal(first.total, 7);
+  assert.equal(first.items.length, 4);
+  assert.equal(second.items.length, 3);
+  assert.equal(new Set([...first.items, ...second.items].map((item) => item.userId)).size, 7, '兩頁不重複');
+  // 自己部門（甲課）的人排最前面
+  assert.ok(first.items.slice(0, 3).every((item) => item.departmentName === `甲課-${suffix}`), JSON.stringify(first.items.map((item) => item.departmentName)));
+  // 排除已在專案裡的人
+  const excluded = await list(tokens.salesA1, { excludeIds: users.manager.userId, pageSize: '50' });
+  assert.ok(!excluded.items.some((item) => item.userId === users.manager.userId));
+  // 會計（稽核部）可以被加為專案成員
+  await ok(call('PUT', `/api/projects/${projects.A1}/members`, { token: tokens.salesA1, body: [{ userId: users.accountant.userId, projectRole: 'member' }] }));
+  const detail = await ok(call('GET', `/api/projects/${projects.A1}`, { token: tokens.salesA1 }));
+  assert.equal(detail.members[0].departmentName, `稽核-${suffix}`, '成員清單帶出部門');
+});
+
+await step('清理：停用測試帳號與測試部門、刪除自訂角色（客戶與專案保留，名稱含執行代號）', async () => {
   const roles = await ok(call('GET', '/api/admin/roles', { token: admin }));
   const viewer = roles.find((value) => value.code === 'viewer').id;
   for (const user of Object.values(users)) {
     if (user?.membershipId) await ok(call('PATCH', `/api/admin/users/${user.membershipId}`, { token: admin, body: { isActive: false, roleId: viewer } }));
   }
   assert.equal((await call('DELETE', `/api/admin/roles/${users.deptRoleId}`, { token: admin })).status, 204);
+  // 測試部門停用後就不會出現在各處的部門選單
+  for (const id of [dept.A, dept.B, dept.TOP, dept.AUD]) await ok(call('PATCH', `/api/admin/departments/${id}`, { token: admin, body: { isActive: false } }));
 });
 
 console.log(`\n全部 ${passed} 項通過`);

@@ -74,7 +74,17 @@ public sealed class ProjectService(QuoteDbContext db, ProjectAccessService acces
         var members = await db.ProjectMembers.AsNoTracking()
             .Where(value => value.ProjectId == projectId)
             .OrderBy(value => value.AddedAt)
-            .Select(value => new { value.UserId, value.User.DisplayName, value.ProjectRole, value.AddedAt })
+            .Select(value => new
+            {
+                value.UserId,
+                value.User.DisplayName,
+                // 成員目前在本公司的部門（成員清單顯示用）
+                departmentName = db.CompanyMemberships.Where(membership => membership.UserId == value.UserId)
+                    .Select(membership => db.Departments.Where(department => department.Id == membership.DepartmentId).Select(department => department.Name).FirstOrDefault())
+                    .FirstOrDefault(),
+                value.ProjectRole,
+                value.AddedAt,
+            })
             .ToListAsync(cancellationToken);
         var history = await db.ProjectStatusHistories.AsNoTracking()
             .Where(value => value.ProjectId == projectId)

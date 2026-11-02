@@ -136,7 +136,7 @@ const roleLabel = computed(() => (p.value?.myRole ? PROJECT_ROLES[p.value.myRole
           <a-list :data-source="[{ userId: p.owner.id, displayName: p.owner.displayName, projectRole: 'owner', addedAt: p.createdAt }, ...p.members]">
             <template #renderItem="{ item }">
               <a-list-item>
-                <a-list-item-meta :title="item.displayName" />
+                <a-list-item-meta :title="item.displayName" :description="item.departmentName" />
                 <a-tag :color="item.projectRole === 'owner' ? 'gold' : item.projectRole === 'viewer' ? 'default' : 'blue'">{{ PROJECT_ROLES[item.projectRole] }}</a-tag>
               </a-list-item>
             </template>

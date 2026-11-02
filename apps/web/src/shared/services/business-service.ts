@@ -24,6 +24,24 @@ export const searchDirectoryUsersApi = (query: { keyword?: string; ids?: string[
   apiRequest<DirectoryUser[]>('/api/directory/users', { query });
 export const listDirectoryDepartmentsApi = () => apiRequest<DirectoryDepartment[]>('/api/directory/departments');
 
+/** 選專案成員的名單（表格）：姓名、部門、角色；篩選與分頁都由後端處理。 */
+export interface DirectoryMember extends DirectoryUser {
+  roleId: string;
+  roleName: string;
+}
+export type DirectoryMemberQuery = {
+  keyword?: string;
+  departmentId?: string;
+  includeSubDepartments?: boolean;
+  roleId?: string;
+  excludeIds?: string[];
+  page?: number;
+  pageSize?: number;
+};
+export const listDirectoryMembersApi = (query: DirectoryMemberQuery) =>
+  apiRequest<{ total: number; page: number; pageSize: number; items: DirectoryMember[] }>('/api/directory/members', { query });
+export const listDirectoryRolesApi = () => apiRequest<{ id: string; name: string }[]>('/api/directory/roles');
+
 // ---------- 客戶 ----------
 
 export interface ClientRow {
@@ -148,6 +166,7 @@ export interface ProjectSearchResult extends Paged<ProjectRow> {
 export interface ProjectMember {
   userId: string;
   displayName?: string;
+  departmentName?: string | null;
   projectRole: 'manager' | 'member' | 'viewer';
 }
 

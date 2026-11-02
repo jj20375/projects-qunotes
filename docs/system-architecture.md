@@ -228,6 +228,7 @@ flowchart LR
 | 後端排序 | 欄位加 `enableSorting: true`，`:sorting="[{ id, desc }]"` 顯示目前排序；整個表頭儲存格可點，鍵盤用裡面的按鈕 |
 | 自訂儲存格 | `#cell="{ columnId, record, value, index }"`；沒輸出內容的欄位自動顯示欄位值 |
 | 展開列 | 提供 `#expanded="{ record }"` slot，每列左邊出現展開鈕（訂單、出貨、保固、發票的附件） |
+| 勾選列 | `v-model:selected-keys`（列的 row-key 陣列）：左邊出現勾選欄，表頭可勾整頁；已勾選的 key 由頁面保留，可跨頁勾選；`row-selectable` 決定哪些列不能勾（選專案成員的名單） |
 | 樹狀 | `:get-sub-rows="(row) => row.children"`，第一欄出現縮排與展開鈕；`default-expand-all` 預設全部展開（部門、報價版本） |
 | 版面 | `size="small"`、`:scroll-x`（最小寬度，窄螢幕橫向捲動）、`:scroll-y`（固定高度，表頭固定）、`meta.fixed: 'right'` 固定在右側的操作欄 |
 | 空畫面、載入中 | `#empty` slot、`:loading`；沒有資料且不在載入時顯示「沒有資料」 |
@@ -250,7 +251,7 @@ flowchart LR
 - 一般列表使用 `ListQuery`（`Modules/Common/ListQuery.cs`）：`keyword`、`page`（預設 1）、`pageSize`（預設 20、上限 200）。`total` 是符合條件的總數，不受分頁影響。
 - 有更多條件的列表（專案、報價單、客戶、品項）各自定義查詢參數，分頁與 `total` 規則相同；專案列表另有 `sort`／`desc` 欄位排序。
 - 下拉選單用遠端搜尋，不一次載入整份名單：
-  - `GET /api/directory/users?keyword=&ids=&excludeIds=&limit=`：人員；`keyword` 比對姓名與部門，`ids` 取回指定人員（顯示已選的值），`excludeIds` 排除指定人員（例如專案負責人），`limit` 預設 20、上限 50。
+  - `GET /api/directory/users?keyword=&ids=&excludeIds=&limit=`：人員；`keyword` 比對姓名與部門，`ids` 取回指定人員（顯示已選的值），`excludeIds` 排除指定人員（例如專案負責人），`limit` 預設 20、上限 50。 排序為自己部門的人最前面，其次是下層部門，最後其他部門，同一層依姓名，所以沒輸入關鍵字時一打開就看得到同部門同事。
   - `GET /api/clients`（客戶）、`GET /api/projects`（專案）：既有的搜尋 API，下拉用 `pageSize=30`。
   - `GET /api/auth/scopes?keyword=&offset=&limit=`：切換公司；平台管理員可進入所有公司，所以由後端搜尋與分頁：自己所屬的公司排前面，其餘依名稱排序，`limit` 預設 20、上限 50，`keyword` 同時過濾「平台管理」；第一頁（offset 0）一定帶出目前所在的公司。前端公司選單輸入文字時重新向後端查詢，捲到底時用 `offset` 載入下一頁（`AdminShell.vue`）。
 - 前端對應：`UserSelect.vue`、`ClientSelect.vue`、`ProjectSelect.vue` 輸入文字後 250 毫秒送出查詢；列表頁的搜尋框按 Enter 才送出，換頁與換每頁筆數會重新查詢。
@@ -285,6 +286,7 @@ company scope（公司一律取自 JWT，路由不帶 companyId）
 
 ```
 ✅ /api/directory/users | departments            公司通訊錄（選負責人、成員、部門用；任何公司成員可讀）；users 為遠端搜尋（見 7.0）
+✅ /api/directory/members | roles                 選專案成員的名單：members 依 keyword（姓名）、departmentId（includeSubDepartments 預設含下層）、roleId 篩選、excludeIds 排除，後端分頁回傳 { total, page, pageSize, items }（姓名、部門、角色）；roles 只回傳角色名稱供篩選
 ✅ /api/clients                                  GET 搜尋（keyword, status, ownerUserId, page, pageSize；只回傳看得到的客戶，依資料範圍與所屬部門）、POST
 ✅ /api/clients/{id}                             GET、PUT（帶 contacts 時整批取代聯絡人）、DELETE（軟刪除；有專案不可刪）
 ✅ /api/projects                                 GET 搜尋、POST（自動編號 P{年}-{4 碼}）
