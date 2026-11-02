@@ -1,0 +1,8 @@
+---
+import BaseLayout from '@/app/layouts/BaseLayout.astro';
+import LoginPage from './_components/LoginPage.vue';
+---
+
+<BaseLayout title="登入">
+  <LoginPage client:only="vue" />
+</BaseLayout>

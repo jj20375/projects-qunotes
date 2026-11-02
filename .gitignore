@@ -1,0 +1,21 @@
+# 環境變數（含密碼）
+.env
+.env.*
+!.env*.example
+deploy/.env
+deploy/.env.*
+!deploy/.env*.example
+
+# 建置產物
+node_modules/
+bin/
+obj/
+dist/
+.DS_Store
+
+# Astro
+.astro/
+
+# file-server 本機資料
+file-server/data/
+file-server/node_modules/

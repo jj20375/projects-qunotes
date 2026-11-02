@@ -1,0 +1,25 @@
+{
+  "name": "quote-platform",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:api": "node scripts/run-with-env.mjs .env.development-api.local -- dotnet run --project apps/api/QuotePlatform.Api --no-launch-profile",
+    "dev:api:init": "node scripts/run-with-env.mjs .env.development-api.local -- dotnet run --project apps/api/QuotePlatform.Api --no-launch-profile -- --seed-only",
+    "dev:web": "npm --prefix apps/web run dev",
+    "dev:web:lan": "QUOTE_WEB_HOST=0.0.0.0 npm --prefix apps/web run dev",
+    "dev:file": "node scripts/run-with-env.mjs .env.development-file.local -- node file-server/src/server.mjs",
+    "build:api": "dotnet build QuotePlatform.slnx",
+    "build:web": "npm --prefix apps/web run build",
+    "check:web": "npm --prefix apps/web run typecheck",
+    "test:api": "dotnet run --project apps/api/QuotePlatform.Api -- --self-test",
+    "test:file": "npm --prefix file-server test",
+    "test:smoke": "node tests/api-smoke.mjs",
+    "test:smoke:projects": "node tests/projects-smoke.mjs",
+    "test:smoke:quotes": "node tests/quotes-smoke.mjs",
+    "test:smoke:documents": "node tests/documents-smoke.mjs",
+    "test:smoke:dashboard": "node tests/dashboard-smoke.mjs",
+    "test:smoke:ocr": "node tests/ocr-smoke.mjs",
+    "test:smoke:quote-format": "node tests/quote-format-smoke.mjs",
+    "migrations:add": "dotnet ef migrations add --project apps/api/QuotePlatform.Api --output-dir Migrations"
+  }
+}

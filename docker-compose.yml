@@ -1,0 +1,109 @@
+# 專案報價管理系統 compose stack（不含 MariaDB）
+#
+# MariaDB 沿用主機上的共用 container（美達特的 shared-db／central-mariadb），
+# 必須疊上 docker-compose.shared-db.yml 才能連到資料庫：
+#   docker compose -f docker-compose.yml -f docker-compose.shared-db.yml --env-file deploy/.env up -d
+# 首次部署前先執行 deploy/ensure-shared-db.sh 建立 quote_platform 與 quote_app。
+#
+# 檔案本體由 file-server 存在 MinIO（獨立 bucket 與帳號，不與美達特共用）。
+name: quote-platform
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/QuotePlatform.Api/Dockerfile
+    image: quote-platform-api:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_URLS: http://0.0.0.0:8080
+      # 連線目標 mariadb 是共用 MariaDB 在外部 network 上的名稱（見 docker-compose.shared-db.yml）。
+      ConnectionStrings__Quote: Server=mariadb;Port=3306;Database=quote_platform;User=quote_app;Password=${DB_PASSWORD:?請在 deploy/.env 設定 DB_PASSWORD}
+      Quote__JwtKey: ${JWT_KEY:?請在 deploy/.env 設定 JWT_KEY}
+      Quote__RefreshCookieSecure: ${REFRESH_COOKIE_SECURE:-true}
+      Quote__LoginCaptchaEnabled: "true"
+      Quote__MigrateOnStart: ${MIGRATE_ON_START:-true}
+      Quote__BootstrapOnStart: ${BOOTSTRAP_ON_START:-false}
+      Quote__BootstrapAdminPassword: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      Quote__SeedDemoData: "false"
+      Quote__FileTokenKey: ${FILE_TOKEN_KEY:?請在 deploy/.env 設定 FILE_TOKEN_KEY}
+      Quote__FileCallbackSecret: ${FILE_CALLBACK_SECRET:?請在 deploy/.env 設定 FILE_CALLBACK_SECRET}
+      Quote__FilePublicBasePath: /files
+      # 報價單 PDF 的公司 Logo 由 API 走內網向 file-server 取檔（不經 nginx）。
+      Quote__FileServerInternalUrl: http://file-server:5190
+      Quote__AnthropicApiKey: ${ANTHROPIC_API_KEY:-}
+      Quote__GeminiApiKey: ${GEMINI_API_KEY:-}
+      # AI 供應商、模型、強度在 deploy/config/ai-settings.json；改檔後幾秒內生效，不需重啟。
+      # 掛整個資料夾（不是單一檔案），編輯器以「另存取代」方式存檔時容器內也看得到新內容；Docker 掛載需用輪詢偵測變更。
+      Quote__AiSettingsPath: /app/config/ai-settings.json
+      DOTNET_USE_POLLING_FILE_WATCHER: "true"
+    volumes:
+      - ./deploy/config:/app/config:ro
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  file-server:
+    build:
+      context: .
+      dockerfile: file-server/Dockerfile
+    image: quote-platform-file-server:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      - minio
+    environment:
+      FILE_TOKEN_KEY: ${FILE_TOKEN_KEY}
+      FILE_CALLBACK_SECRET: ${FILE_CALLBACK_SECRET}
+      # compose 內網直接呼叫 API；nginx 對外封鎖 /api/internal/。
+      FILE_CALLBACK_URL: http://api:8080/api/internal/files
+      STORAGE_DRIVER: s3
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: quote-files
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:?請在 deploy/.env 設定 MINIO_ROOT_USER}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?請在 deploy/.env 設定 MINIO_ROOT_PASSWORD}
+    volumes:
+      - file-tmp:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  minio:
+    image: minio/minio:${MINIO_TAG:-RELEASE.2025-09-07T16-13-09Z}
+    restart: unless-stopped
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio-data:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    image: quote-platform-web:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      - api
+      - file-server
+    ports:
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-8096}:80"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+
+volumes:
+  minio-data:
+  # 上傳中的暫存檔，存完即刪，不需備份。
+  file-tmp:

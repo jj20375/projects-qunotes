@@ -1,0 +1,9 @@
+---
+import BaseLayout from '@/app/layouts/BaseLayout.astro';
+import AdminApp from '@/app/components/AdminApp.vue';
+---
+
+<!-- 靜態站以 query string 傳專案 id：/projects/detail?id=... -->
+<BaseLayout title="專案明細">
+  <AdminApp routeKey="project-detail" client:only="vue" />
+</BaseLayout>

@@ -1,0 +1,31 @@
+{
+  "name": "quote-platform-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "typecheck": "astro check && vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "@ant-design/icons-vue": "7.0.1",
+    "@astrojs/vue": "7.1.2",
+    "@tanstack/vue-query": "5.101.4",
+    "@tanstack/vue-table": "9.3.1",
+    "ant-design-vue": "4.2.6",
+    "astro": "7.4.4",
+    "dayjs": "1.11.21",
+    "echarts": "6.1.0",
+    "vue": "3.5.44"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.12",
+    "typescript": "5.9.3",
+    "vue-tsc": "3.3.14"
+  },
+  "engines": {
+    "node": ">=24.15.0"
+  }
+}

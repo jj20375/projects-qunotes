@@ -1,0 +1,8 @@
+---
+import BaseLayout from '@/app/layouts/BaseLayout.astro';
+import AdminApp from '@/app/components/AdminApp.vue';
+---
+
+<BaseLayout title="公司參數">
+  <AdminApp routeKey="settings" client:only="vue" />
+</BaseLayout>

@@ -1,0 +1,28 @@
+# 共用 MariaDB overlay（沿用美達特 docker-compose.shared-db.yml 的做法）
+#
+# api 加入主機上共用 MariaDB 的 Docker network，以主機名稱 `mariadb` 連線：
+#   - Mac 開發機：shared-mariadb，network `shared-db`（container 在該 network 上的別名就是 mariadb）
+#   - demo／VPS：central-mariadb，container `mariadb`，network `mariadb-network`
+# 本專案不建立任何 MariaDB container，只使用自己的資料庫 quote_platform 與帳號 quote_app。
+
+services:
+  api:
+    # 一旦列出 networks 就不會自動加入 default，必須明確列出，否則 web 連不到 api。
+    networks:
+      - default
+      - central-db
+
+volumes:
+  # 與美達特相同：正式環境 MinIO 資料落在 ${DATA_ROOT} 底下的具名目錄，可直接 rsync 備份。
+  minio-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_ROOT:?請在 deploy/.env 設定 DATA_ROOT}/quote/minio
+
+networks:
+  central-db:
+    # 由共用 MariaDB stack 建立；這裡只加入不建立，找不到會直接報錯。
+    external: true
+    name: ${SHARED_DB_NETWORK:-mariadb-network}

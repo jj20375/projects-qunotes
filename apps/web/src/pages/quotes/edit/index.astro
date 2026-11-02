@@ -1,0 +1,9 @@
+---
+import BaseLayout from '@/app/layouts/BaseLayout.astro';
+import AdminApp from '@/app/components/AdminApp.vue';
+---
+
+<!-- 編輯既有報價：/quotes/edit?id=...；新增：/quotes/edit?projectId=... -->
+<BaseLayout title="報價單">
+  <AdminApp routeKey="quote-edit" client:only="vue" />
+</BaseLayout>

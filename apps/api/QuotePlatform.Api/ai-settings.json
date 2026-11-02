@@ -1,0 +1,28 @@
+// AI 設定：圖像識別匯入（照片／掃描檔／PDF → 報價明細）使用的供應商、模型與強度。
+//
+// - 存檔後幾秒內自動生效，不需要重啟 API。值寫錯時 API 記錄錯誤並沿用上一份正確設定（啟動時寫錯則無法啟動）。
+// - 金鑰不要寫在這裡：放環境變數 Quote__AnthropicApiKey（Claude）、Quote__GeminiApiKey（Gemini）。
+// - 環境變數 Ai__Ocr__...（例如 Ai__Ocr__Provider=gemini）會覆寫這個檔案的值。
+// - 強度越高，辨識越仔細，但越慢、費用越高。強度最低為 medium（設更低會被拒絕），辨識錯誤多再調高。
+{
+  "Ai": {
+    "Ocr": {
+      // 供應商：claude、gemini，或空字串（自動選有設定金鑰的一家；兩家都有時用 Claude）
+      "Provider": "",
+
+      "Claude": {
+        // 模型 ID，例如 claude-opus-5-5、claude-sonnet-5-5、claude-haiku-5-5
+        "Model": "claude-opus-5-5",
+        // 強度（effort）：medium、high、xhigh、max（最低 medium）
+        "Effort": "medium"
+      },
+
+      "Gemini": {
+        // 模型 ID，例如 gemini-3.8-flash、gemini-3.5-flash-lite
+        "Model": "gemini-3.8-flash",
+        // 強度（thinking level）：medium、high（最低 medium）
+        "ThinkingLevel": "medium"
+      }
+    }
+  }
+}

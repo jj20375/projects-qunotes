@@ -1,0 +1,8 @@
+---
+import BaseLayout from '@/app/layouts/BaseLayout.astro';
+import AdminApp from '@/app/components/AdminApp.vue';
+---
+
+<BaseLayout title="專案">
+  <AdminApp routeKey="projects" client:only="vue" />
+</BaseLayout>
