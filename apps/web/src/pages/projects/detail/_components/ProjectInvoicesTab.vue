@@ -4,7 +4,7 @@
  * 專案的發票（可多筆）：開立、登記收款、作廢；買受人預設帶專案客戶的發票抬頭與統編。
  * 號碼開錯時：未收款可刪除後重開，已處理過的請作廢。
  */
-import { reactive, ref } from 'vue';
+import { reactive, ref, watch } from 'vue';
 import dayjs, { type Dayjs } from 'dayjs';
 import { message, Modal } from 'ant-design-vue';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/vue-query';
@@ -12,9 +12,10 @@ import DataTable, { type TableChange } from '@/app/components/DataTable.vue';
 import RemoteSelect, { type RemoteOption } from '@/app/components/RemoteSelect.vue';
 import { dataColumns } from '@/shared/table/data-table';
 import AttachmentList from '@/app/components/AttachmentList.vue';
+import InvoicePreviewDrawer from '@/app/components/InvoicePreviewDrawer.vue';
 import { useMe } from '@/app/composables/use-me';
 import type { ProjectDetail } from '@/shared/services/business-service';
-import { deleteInvoiceApi, listInvoicesApi, listOrdersApi, recordPaymentApi, saveInvoiceApi, voidInvoiceApi, type Invoice, type Order } from '@/shared/services/document-service';
+import { deleteInvoiceApi, listInvoicesApi, listOrdersApi, lookupInvoiceNoApi, recordPaymentApi, saveInvoiceApi, voidInvoiceApi, type Invoice, type InvoiceLookup, type Order } from '@/shared/services/document-service';
 import { formatMoney } from '@/shared/types/business';
 
 const props = defineProps<{ project: ProjectDetail }>();
@@ -46,7 +47,41 @@ const formOpen = ref(false);
 const form = reactive<Partial<Invoice> & { date?: Dayjs; due?: Dayjs | null }>({});
 const saving = ref(false);
 
+// ---------- 發票號碼防呆 ----------
+// 號碼在公司內唯一（含已作廢的）；輸入完整號碼後即時向後端查詢，重複時擋下儲存，並可查看那張發票。
+const invoiceNoPattern = /^[A-Za-z]{2}-?\d{8}$/;
+const duplicate = ref<InvoiceLookup | null>(null);
+const checking = ref(false);
+const previewOpen = ref(false);
+let checkTimer: ReturnType<typeof setTimeout> | undefined;
+let checkTicket = 0;
+watch(
+  () => form.invoiceNo,
+  (value) => {
+    clearTimeout(checkTimer);
+    duplicate.value = null;
+    const text = (value ?? '').trim();
+    if (!invoiceNoPattern.test(text)) {
+      checking.value = false;
+      return;
+    }
+    checking.value = true;
+    const ticket = ++checkTicket;
+    checkTimer = setTimeout(async () => {
+      try {
+        const result = await lookupInvoiceNoApi(text, form.id);
+        if (ticket === checkTicket) duplicate.value = result.exists ? result : null;
+      } catch {
+        // 查詢失敗不擋輸入，儲存時後端仍會檢查唯一性。
+      } finally {
+        if (ticket === checkTicket) checking.value = false;
+      }
+    }, 350);
+  },
+);
+
 function open(row: Invoice | null) {
+  duplicate.value = null;
   Object.keys(form).forEach((key) => delete (form as Record<string, unknown>)[key]);
   Object.assign(form, row ? { ...row, date: dayjs(row.invoiceDate), due: row.dueDate ? dayjs(row.dueDate) : null } : { date: dayjs(), invoiceType: 'triplicate', taxAmount: 0, due: dayjs().add(30, 'day') });
   formOpen.value = true;
@@ -59,6 +94,7 @@ function fillFromOrder(raw: unknown) {
 }
 
 async function save() {
+  if (duplicate.value) return message.error(`發票號碼 ${duplicate.value.invoiceNo} 已登錄過，請確認號碼。`);
   saving.value = true;
   try {
     await saveInvoiceApi(props.project.id, { ...form, invoiceDate: form.date?.format('YYYY-MM-DD'), dueDate: form.due?.format('YYYY-MM-DD') ?? null });
@@ -175,10 +211,20 @@ const columns = [
     <template #empty><a-empty description="還沒有發票" /></template>
   </DataTable>
 
-  <a-modal v-model:open="formOpen" :title="form.id ? '編輯發票' : '開立發票'" :confirm-loading="saving" ok-text="儲存" @ok="save">
+  <a-modal v-model:open="formOpen" :title="form.id ? '編輯發票' : '開立發票'" :confirm-loading="saving" ok-text="儲存" :ok-button-props="{ disabled: !!duplicate || checking }" @ok="save">
     <a-form layout="vertical">
       <a-row :gutter="12">
-        <a-col :span="12"><a-form-item label="發票號碼" required extra="例如 AB-12345678"><a-input v-model:value="form.invoiceNo" :maxlength="11" /></a-form-item></a-col>
+        <a-col :span="12">
+          <a-form-item label="發票號碼" required :extra="duplicate ? undefined : '例如 AB-12345678'" :validate-status="duplicate ? 'error' : checking ? 'validating' : undefined" :has-feedback="checking">
+            <a-input v-model:value="form.invoiceNo" :maxlength="11" />
+            <template v-if="duplicate" #help>
+              <span class="dup">
+                {{ duplicate.invoiceNo }} 已登錄過{{ duplicate.visible ? '' : '（屬於您沒有權限檢視的專案）' }}
+                <a v-if="duplicate.visible" @click="previewOpen = true">查看這張發票</a>
+              </span>
+            </template>
+          </a-form-item>
+        </a-col>
         <a-col :span="12"><a-form-item label="發票日期" required><a-date-picker v-model:value="form.date" style="width: 100%" /></a-form-item></a-col>
         <a-col :span="12">
           <a-form-item label="類型"><a-select v-model:value="form.invoiceType" :options="Object.entries(typeLabels).map(([value, label]) => ({ value, label }))" /></a-form-item>
@@ -196,6 +242,8 @@ const columns = [
       </a-row>
     </a-form>
   </a-modal>
+
+  <InvoicePreviewDrawer :open="previewOpen" :lookup="duplicate" :current-project-id="project.id" @close="previewOpen = false" />
 
   <a-modal :open="!!payment.invoice" :title="`登記收款：${payment.invoice?.invoiceNo ?? ''}`" ok-text="儲存" @ok="savePayment" @cancel="payment.invoice = null">
     <a-form layout="vertical">
@@ -223,6 +271,12 @@ const columns = [
 }
 .small {
   font-size: 12px;
+}
+.dup {
+  color: #ff4d4f;
+}
+.dup a {
+  margin-left: 6px;
 }
 .voided {
   text-decoration: line-through;

@@ -161,7 +161,8 @@ await step('列表搜尋、分頁由後端處理：成員、公司、系統帳�
   };
   // 成員：關鍵字（姓名、帳號、Email）與分頁在資料庫處理，total 是符合條件的總數。
   const all = await get('/api/admin/users?pageSize=200', demoAdmin.token);
-  assert.ok(all.total >= 3 && all.items.length === all.total);
+  // 每頁上限 200：停用的測試帳號會一直留在列表，成員數可能超過一頁，所以只檢查「這一頁最多 200 筆、total 是整體筆數」。
+  assert.ok(all.total >= 3 && all.items.length === Math.min(all.total, 200));
   const one = await get('/api/admin/users?keyword=demo-manager', demoAdmin.token);
   assert.deepEqual([one.total, one.items.map((user) => user.account)], [1, ['demo-manager']]);
   assert.equal((await get('/api/admin/users?keyword=不存在的人', demoAdmin.token)).total, 0);

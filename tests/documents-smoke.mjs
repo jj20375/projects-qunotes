@@ -163,6 +163,48 @@ await step('刪除未收款發票後，號碼可以重新登錄', async () => {
   assert.equal((await call('POST', `/api/projects/${projectId}/invoices`, { token: accountant, body })).status, 201);
 });
 
+await step('發票號碼即時防呆：重複時帶出那張發票、訂單與專案；看不到的專案不透露內容；編輯自己不算重複', async () => {
+  const mine = (await call('GET', `/api/projects/${projectId}/invoices`, { token: sales })).data.items.find((item) => item.id === invoiceId);
+  const lookup = (token, number, excludeId) => call('GET', `/api/invoices/lookup?invoiceNo=${encodeURIComponent(number)}${excludeId ? `&excludeId=${excludeId}` : ''}`, { token });
+
+  // 重複（格式可以不含連字號、小寫）：帶出發票、對應訂單與所屬專案
+  const found = await lookup(sales, mine.invoiceNo.replace('-', '').toLowerCase());
+  assert.equal(found.status, 200, JSON.stringify(found.data));
+  assert.equal(found.data.exists, true);
+  assert.equal(found.data.visible, true);
+  assert.equal(found.data.invoice.id, invoiceId);
+  assert.equal(found.data.invoice.totalAmount, 105000);
+  assert.equal(found.data.order.orderNo, `PO-${suffix}`);
+  assert.equal(found.data.order.quoteNo.startsWith('Q'), true, '訂單的來源報價也帶出來');
+  assert.equal(found.data.project.id, projectId);
+  // 編輯這張發票自己時不算重複
+  assert.equal((await lookup(sales, mine.invoiceNo, invoiceId)).data.exists, false);
+  // 沒用過的號碼
+  assert.equal((await lookup(sales, `ZY-${String(Date.now()).slice(-8)}`)).data.exists, false);
+  // 格式不對
+  assert.equal((await lookup(sales, 'A1234')).status, 400);
+  // 看不到那個專案的人：只知道號碼已被使用，拿不到任何內容
+  const hidden = await lookup(otherSales, mine.invoiceNo);
+  assert.equal(hidden.status, 200);
+  assert.equal(hidden.data.exists, true);
+  assert.equal(hidden.data.visible, false);
+  assert.equal(hidden.data.invoice, undefined);
+  assert.equal(hidden.data.order, undefined);
+  assert.equal(hidden.data.project, undefined);
+  // 沒有發票讀取權的人不能查
+  assert.equal((await call('GET', `/api/invoices/lookup?invoiceNo=${mine.invoiceNo}`, {})).status, 401);
+  // 已作廢的號碼一樣算重複：存檔也被擋
+  const voidedNo = `ZX-${String(Date.now()).slice(-8)}`;
+  const voided = await call('POST', `/api/projects/${projectId}/invoices`, { token: accountant, body: { orderId, invoiceNo: voidedNo, invoiceDate: '2026-10-29', salesAmount: 100, taxAmount: 5 } });
+  assert.equal(voided.status, 201, JSON.stringify(voided.data));
+  assert.equal((await call('POST', `/api/invoices/${voided.data.id}/void`, { token: accountant, body: { reason: '測試作廢' } })).status, 200);
+  const voidedLookup = (await lookup(sales, voidedNo)).data;
+  assert.equal(voidedLookup.exists, true);
+  assert.equal(voidedLookup.invoice.status, 'void');
+  assert.equal(voidedLookup.invoice.voidReason, '測試作廢');
+  assert.equal((await call('POST', `/api/projects/${projectId}/invoices`, { token: accountant, body: { orderId, invoiceNo: voidedNo, invoiceDate: '2026-10-29', salesAmount: 100, taxAmount: 5 } })).status, 409);
+});
+
 let shipmentId;
 await step('出貨單：掛在訂單下（必填、不能選已取消的訂單），附件與訂單權限一致；訂單底下有出貨單不能刪', async () => {
   const body = { orderId, shipmentNo: `SH-${suffix}-1`, shipDate: '2026-11-01', receiverName: '王小明', deliveryAddress: '台北市信義區', trackingNo: `TRK-${suffix}` };

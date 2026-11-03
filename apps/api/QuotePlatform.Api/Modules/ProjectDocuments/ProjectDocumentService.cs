@@ -303,6 +303,60 @@ public sealed partial class ProjectDocumentService(QuoteDbContext db, ProjectAcc
         return isNew ? ServiceResult<object>.Created(new { invoice.Id, invoice.InvoiceNo }) : ServiceResult<object>.Ok(new { invoice.Id, invoice.InvoiceNo });
     }
 
+    /// <summary>
+    /// 查發票號碼有沒有被用過（開立時即時防呆）。號碼在公司內唯一，不分專案、不分已作廢；
+    /// 重複時回傳那張發票與它的訂單、專案，讓使用者確認是不是重複登錄。
+    /// 發票屬於看不到的專案時只回「已被使用」，不透露內容（資料範圍）。<paramref name="excludeId"/> 是編輯中的發票自己。
+    /// </summary>
+    public async Task<ServiceResult<object>> LookupInvoiceNoAsync(RequestScope scope, string? invoiceNo, Guid? excludeId, CancellationToken cancellationToken)
+    {
+        var match = InvoiceNoPattern().Match((invoiceNo ?? string.Empty).Trim().ToUpperInvariant());
+        if (!match.Success) return ServiceResult<object>.BadRequest("發票號碼格式為兩碼英文加八碼數字，例如 AB-12345678。");
+        var number = $"{match.Groups[1].Value}-{match.Groups[2].Value}";
+        var invoice = await db.ProjectInvoices.AsNoTracking().FirstOrDefaultAsync(value => value.InvoiceNo == number && value.Id != excludeId, cancellationToken);
+        if (invoice is null) return ServiceResult<object>.Ok(new { exists = false, invoiceNo = number });
+
+        var project = await access.GetAsync(scope, invoice.ProjectId, track: false, cancellationToken);
+        if (project is null) return ServiceResult<object>.Ok(new { exists = true, visible = false, invoiceNo = number });
+
+        object? order = null;
+        if (invoice.OrderId is Guid orderId && scope.Has("orders", "read"))
+        {
+            var found = await db.ProjectOrders.AsNoTracking().FirstOrDefaultAsync(value => value.Id == orderId, cancellationToken);
+            if (found is not null)
+            {
+                var quoteNos = found.QuoteId is Guid quoteId ? await QuoteLabelsAsync([quoteId], cancellationToken) : [];
+                order = new { found.Id, found.OrderNo, found.OrderDate, found.Amount, found.TaxAmount, found.Total, found.Status, found.QuoteId, quoteNo = found.QuoteId is Guid id ? quoteNos.GetValueOrDefault(id) : null };
+            }
+        }
+        return ServiceResult<object>.Ok(new
+        {
+            exists = true,
+            visible = true,
+            invoiceNo = number,
+            invoice = new
+            {
+                invoice.Id,
+                invoice.InvoiceNo,
+                invoice.InvoiceDate,
+                invoice.InvoiceType,
+                invoice.BuyerName,
+                invoice.BuyerTaxId,
+                invoice.SalesAmount,
+                invoice.TaxAmount,
+                invoice.TotalAmount,
+                invoice.Status,
+                invoice.PaymentStatus,
+                invoice.PaidAmount,
+                invoice.DueDate,
+                invoice.VoidReason,
+                invoice.Note,
+            },
+            order,
+            project = new { project.Project.Id, project.Project.ProjectNo, project.Project.Name },
+        });
+    }
+
     /// <summary>登記累計收款金額；付清時記錄收款日。</summary>
     public async Task<ServiceResult<object>> RecordPaymentAsync(RequestScope scope, Guid invoiceId, PaymentInput input, CancellationToken cancellationToken)
     {

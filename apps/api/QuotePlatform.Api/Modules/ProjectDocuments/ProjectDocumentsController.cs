@@ -74,6 +74,11 @@ public sealed class ProjectDocumentsController(ProjectDocumentService service, S
     public async Task<ActionResult> ListInvoices(Guid projectId, [FromQuery] ListQuery query, CancellationToken cancellationToken) =>
         TryCompany("invoices", "read", out var scope) ? ToResult(await service.ListInvoicesAsync(scope, projectId, query, cancellationToken)) : Forbidden();
 
+    /// <summary>發票號碼即時防呆：回傳號碼是否已被使用；重複且看得到時一併回傳那張發票、訂單與專案。</summary>
+    [HttpGet("invoices/lookup")]
+    public async Task<ActionResult> LookupInvoiceNo([FromQuery] string? invoiceNo, [FromQuery] Guid? excludeId, CancellationToken cancellationToken) =>
+        TryCompany("invoices", "read", out var scope) ? ToResult(await service.LookupInvoiceNoAsync(scope, invoiceNo, excludeId, cancellationToken)) : Forbidden();
+
     [HttpPost("projects/{projectId:guid}/invoices")]
     public async Task<ActionResult> CreateInvoice(Guid projectId, InvoiceInput input, CancellationToken cancellationToken) =>
         TryCompany("invoices", "create", out var scope) ? ToResult(await service.SaveInvoiceAsync(scope, projectId, null, input, cancellationToken)) : Forbidden();

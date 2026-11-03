@@ -115,6 +115,16 @@ export const listInvoicesApi = (projectId: string, query: ListParams = {}) =>
   apiRequest<Permissions & PagedResult & { canMarkPaid: boolean; canVoid: boolean; totalAmount: number; paidAmount: number; items: Invoice[] }>(`/api/projects/${projectId}/invoices`, { query });
 export const saveInvoiceApi = (projectId: string, invoice: Partial<Invoice>) =>
   invoice.id ? apiRequest(`/api/invoices/${invoice.id}`, { method: 'PUT', body: invoice }) : apiRequest(`/api/projects/${projectId}/invoices`, { method: 'POST', body: invoice });
+/** 發票號碼即時查詢：已被使用時帶出那張發票與它的訂單、專案；屬於看不到的專案時只回已被使用（visible=false）。 */
+export interface InvoiceLookup {
+  exists: boolean;
+  visible?: boolean;
+  invoiceNo: string;
+  invoice?: Omit<Invoice, 'orderId' | 'orderNo' | 'isOverdue' | 'attachmentCount'> & { id: string };
+  order?: { id: string; orderNo: string; orderDate: string; amount: number; taxAmount: number; total: number; status: Order['status']; quoteId: string | null; quoteNo: string | null } | null;
+  project?: { id: string; projectNo: string; name: string };
+}
+export const lookupInvoiceNoApi = (invoiceNo: string, excludeId?: string) => apiRequest<InvoiceLookup>('/api/invoices/lookup', { query: { invoiceNo, excludeId } });
 export const recordPaymentApi = (id: string, paidAmount: number, paidAt?: string) => apiRequest(`/api/invoices/${id}/payment`, { method: 'POST', body: { paidAmount, paidAt } });
 export const voidInvoiceApi = (id: string, reason: string) => apiRequest(`/api/invoices/${id}/void`, { method: 'POST', body: { reason } });
 export const deleteInvoiceApi = (id: string) => apiRequest(`/api/invoices/${id}`, { method: 'DELETE' });
