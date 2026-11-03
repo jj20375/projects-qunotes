@@ -7,13 +7,12 @@
 import { h, reactive, ref } from 'vue';
 import { Button, notification, Space } from 'ant-design-vue';
 import { HubConnectionState } from '@microsoft/signalr';
-import { readAccessToken, redirectToLogin, refreshAccessToken, storeAccessToken } from '@/shared/api/http-client';
-import { getPresenceApi, officeConnection, type OfficeKnock, type PresenceEntry } from '@/shared/services/office-service';
+import { ensureFreshAccessToken, redirectToLogin, storeAccessToken } from '@/shared/api/http-client';
+import { getPresenceApi, officeConnection, RETRY_DELAYS, RETRY_FALLBACK_DELAY, type OfficeKnock, type PresenceEntry } from '@/shared/services/office-service';
 import type { Me } from '@/shared/types/auth';
 import { hasPermission } from '@/shared/types/permissions';
 
 const ACTIVITY_INTERVAL_MS = 60_000;
-const RESTART_DELAY_MS = 30_000;
 
 const presence = reactive(new Map<string, PresenceEntry>());
 const lastSeen = reactive(new Map<string, string>());
@@ -23,6 +22,8 @@ let knockHandler: ((knock: OfficeKnock) => void) | null = null;
 let started = false;
 let forced = false;
 let everConnected = false;
+let restartAttempt = 0;
+let restartTimer: ReturnType<typeof setTimeout> | undefined;
 
 /** 全域 hub 連線狀態，供辦公室頁顯示「重新連線中」之類的提示。 */
 export const connectionState = ref<'idle' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected'>('idle');
@@ -94,6 +95,8 @@ export async function startPresence(me: Me): Promise<void> {
   hub.on('Knocked', showKnock);
   hub.on('ForceDisconnect', () => {
     forced = true;
+    clearTimeout(restartTimer);
+    restartTimer = undefined;
     void hub.stop();
     storeAccessToken(null);
     redirectToLogin();
@@ -106,7 +109,7 @@ export async function startPresence(me: Me): Promise<void> {
   });
   hub.onclose(() => {
     connectionState.value = 'disconnected';
-    if (!forced) setTimeout(() => void connect(), RESTART_DELAY_MS);
+    scheduleRestart();
   });
   watchActivity();
   await connect();
@@ -114,23 +117,36 @@ export async function startPresence(me: Me): Promise<void> {
 
 async function connect(): Promise<void> {
   const hub = officeConnection();
-  if (hub.state !== HubConnectionState.Disconnected) return;
+  if (forced || hub.state !== HubConnectionState.Disconnected) return;
   connectionState.value = 'connecting';
   try {
     await hub.start();
+    restartAttempt = 0;
     markConnected();
     await loadSnapshot();
     if (everConnected) reconnectedHandlers.forEach((handler) => handler());
     everConnected = true;
   } catch {
     connectionState.value = 'disconnected';
-    // refresh 被拒時 token 會被清除，代表真的登出了；網路錯誤則保留 token 稍後重試。
-    if (!(await refreshAccessToken()) && !readAccessToken()) {
+    // 先看 token 還在不在：refresh 被拒時會被清除（真的登出）；網路錯誤則保留，稍後重試。
+    // 用 ensureFreshAccessToken 而不是直接 refresh，伺服器掛掉時才不會每次重試都輪替 refresh token。
+    if (!(await ensureFreshAccessToken())) {
       redirectToLogin();
       return;
     }
-    setTimeout(() => void connect(), RESTART_DELAY_MS);
+    scheduleRestart();
   }
+}
+
+// 伺服器在 token 到期時會主動關閉連線，onclose 與 start 失敗共用同一組重試間隔，避免每次到期都離線 30 秒以上。
+function scheduleRestart(): void {
+  if (forced || restartTimer !== undefined) return;
+  const delay = RETRY_DELAYS[restartAttempt] ?? RETRY_FALLBACK_DELAY;
+  restartAttempt++;
+  restartTimer = setTimeout(() => {
+    restartTimer = undefined;
+    void connect();
+  }, delay);
 }
 
 function markConnected(): void {

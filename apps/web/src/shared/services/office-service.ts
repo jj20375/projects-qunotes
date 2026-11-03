@@ -164,8 +164,10 @@ export const getPresenceApi = () => apiRequest<PresenceEntry[]>('/api/office/pre
 export const updateRoomThemeApi = (departmentId: string, theme: string) =>
   apiRequest<void>(`/api/office/rooms/${departmentId}/theme`, { method: 'PUT', body: { theme } });
 
-// 重連間隔：0、2、5、10 秒，之後每 30 秒一次，不放棄。
-const RETRY_DELAYS = [0, 2_000, 5_000, 10_000];
+/** 重連間隔（毫秒）：0、2、5、10 秒，之後每 30 秒一次，不放棄；自動重連與 use-presence 的重新啟動共用。 */
+export const RETRY_DELAYS = [0, 2_000, 5_000, 10_000];
+/** RETRY_DELAYS 用完之後的固定重試間隔（毫秒）。 */
+export const RETRY_FALLBACK_DELAY = 30_000;
 
 let connection: HubConnection | null = null;
 
@@ -186,7 +188,7 @@ export function officeConnection(): HubConnection {
         return token;
       },
     })
-    .withAutomaticReconnect({ nextRetryDelayInMilliseconds: (context) => RETRY_DELAYS[context.previousRetryCount] ?? 30_000 })
+    .withAutomaticReconnect({ nextRetryDelayInMilliseconds: (context) => RETRY_DELAYS[context.previousRetryCount] ?? RETRY_FALLBACK_DELAY })
     .configureLogging(LogLevel.Warning)
     .build();
   return connection;
