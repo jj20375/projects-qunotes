@@ -21,6 +21,7 @@
     "test:smoke:dashboard": "node tests/dashboard-smoke.mjs",
     "test:smoke:ocr": "node tests/ocr-smoke.mjs",
     "test:smoke:quote-format": "node tests/quote-format-smoke.mjs",
+    "test:smoke:office": "node tests/office-smoke.mjs",
     "migrations:add": "dotnet ef migrations add --project apps/api/QuotePlatform.Api --output-dir Migrations"
   }
 }
