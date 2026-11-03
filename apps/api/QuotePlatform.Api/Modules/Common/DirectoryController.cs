@@ -5,18 +5,23 @@ using QuotePlatform.Api.Infrastructure;
 namespace QuotePlatform.Api.Modules.Common;
 
 /// <summary>
-/// 公司通訊錄：選專案負責人、成員、部門時使用。只回傳姓名與部門等選單必要欄位，
-/// 任何公司成員都可讀取（帳號、Email 等管理資料仍需 <c>company.users</c>）。
+/// 公司通訊錄控制器（提供專案負責人、成員選擇彈窗與下拉選單使用）。
+/// 僅回傳姓名、部門等必要選單欄位，公司全體成員皆可讀取。
 /// </summary>
+/// <param name="db">資料庫上下文實體。</param>
 [Route("api/directory")]
 public sealed class DirectoryController(QuoteDbContext db) : ScopedControllerBase
 {
     /// <summary>
-    /// 人員下拉的遠端搜尋：<c>keyword</c> 比對姓名與部門名稱，最多回傳 <c>limit</c> 筆（預設 20、上限 50）；
-    /// <c>ids</c> 取回指定人員（顯示已選取的值），<c>excludeIds</c> 排除指定人員（例如專案負責人不必再列為成員）。
-    /// 排序：自己部門的人最前面，其次是下層部門，最後才是其他部門，同一層再依姓名；
-    /// 這樣沒輸入關鍵字時，選專案成員一打開就能看到同部門的同事。
+    /// 人員下拉選單遠端即時搜尋。
+    /// 排序依據：本部門成員置頂，其次為下層部門，其餘部門置後，同層依姓名排序。
     /// </summary>
+    /// <param name="keyword">搜尋關鍵字（比對成員姓名或部門名稱）。</param>
+    /// <param name="ids">欲強制包含的使用者 ID 清單（用於顯示已選取值）。</param>
+    /// <param name="excludeIds">欲排除之使用者 ID 清單（如排除專案負責人）。</param>
+    /// <param name="limit">回傳筆數上限（預設 20，最多 50）。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回人員清單物件陣列。</returns>
     [HttpGet("users")]
     public async Task<ActionResult> Users([FromQuery] string? keyword, [FromQuery] List<Guid>? ids, [FromQuery] List<Guid>? excludeIds, [FromQuery] int? limit, CancellationToken cancellationToken)
     {
@@ -45,10 +50,16 @@ public sealed class DirectoryController(QuoteDbContext db) : ScopedControllerBas
     }
 
     /// <summary>
-    /// 選專案成員用的名單（表格）：<c>keyword</c> 比對姓名，<c>departmentId</c> 篩部門（<c>includeSubDepartments</c> 預設含下層），
-    /// <c>roleId</c> 篩角色，<c>excludeIds</c> 排除已在專案裡的人；分頁由後端處理，回傳 <c>{ total, page, pageSize, items }</c>。
-    /// 排序同 <see cref="Users"/>：自己部門、下層部門、其他部門，同一層依姓名。
+    /// 條件分頁查詢專案成員選擇名單表格。
+    /// 支援依部門、下層部門樹與公司內部角色組合篩選。
     /// </summary>
+    /// <param name="query">分頁與關鍵字查詢條件。</param>
+    /// <param name="departmentId">部門篩選 ID。</param>
+    /// <param name="includeSubDepartments">是否遞迴包含下層子部門（預設 true）。</param>
+    /// <param name="roleId">角色篩選 ID。</param>
+    /// <param name="excludeIds">欲排除之成員 ID 清單。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回分頁成員列表與筆數合計。</returns>
     [HttpGet("members")]
     public async Task<ActionResult> Members(
         [FromQuery] ListQuery query,
@@ -93,7 +104,11 @@ public sealed class DirectoryController(QuoteDbContext db) : ScopedControllerBas
         return Ok(new { total, page = query.PageValue, pageSize = query.PageSizeValue, items = rows });
     }
 
-    /// <summary>名單篩選用的角色（系統內建的公司角色與本公司自訂角色），只回傳名稱。</summary>
+    /// <summary>
+    /// 取得公司通訊錄可供篩選之角色清單（僅回傳名稱與代碼）。
+    /// </summary>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回角色清單陣列。</returns>
     [HttpGet("roles")]
     public async Task<ActionResult> Roles(CancellationToken cancellationToken)
     {
@@ -105,6 +120,11 @@ public sealed class DirectoryController(QuoteDbContext db) : ScopedControllerBas
             .ToListAsync(cancellationToken));
     }
 
+    /// <summary>
+    /// 取得公司組織架構部門清單（下拉選單用）。
+    /// </summary>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回部門陣列。</returns>
     [HttpGet("departments")]
     public async Task<ActionResult> Departments(CancellationToken cancellationToken)
     {

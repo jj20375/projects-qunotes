@@ -5,34 +5,89 @@ using QuotePlatform.Api.Modules.Common;
 
 namespace QuotePlatform.Api.Modules.Administration;
 
+/// <summary>
+/// 建立平台系統管理員帳號輸入契約。
+/// </summary>
+/// <param name="Account">登入帳號名稱。</param>
+/// <param name="DisplayName">使用者姓名。</param>
+/// <param name="Email">電子郵件信箱。</param>
+/// <param name="Password">初始密碼。</param>
+/// <param name="RoleId">指派之平台角色識別碼。</param>
 public sealed record CreateSystemUserRequest(string? Account, string? DisplayName, string? Email, string? Password, Guid? RoleId);
+
+/// <summary>
+/// 更新平台系統管理員帳號輸入契約。
+/// </summary>
+/// <param name="DisplayName">使用者姓名。</param>
+/// <param name="Email">電子郵件信箱。</param>
+/// <param name="RoleId">指派之平台角色識別碼。</param>
+/// <param name="Status">帳號狀態（active 或 disabled）。</param>
 public sealed record UpdateSystemUserRequest(string? DisplayName, string? Email, Guid? RoleId, string? Status);
 
-/// <summary>系統帳號（platform scope）：只列出 SystemRoleId 非空的帳號。</summary>
+/// <summary>
+/// 平台系統管理員帳號管理控制器（平台管理員專屬 platform scope）。
+/// 僅管理 SystemRoleId 非空之跨租戶系統維運帳號。
+/// </summary>
+/// <param name="service">系統帳號核心業務服務實體。</param>
 [Route("api/platform/system-users")]
 public sealed class SystemUsersController(SystemUserService service) : ScopedControllerBase
 {
+    /// <summary>
+    /// 分頁查詢所有平台系統管理員帳號清單。
+    /// </summary>
+    /// <param name="query">分頁與關鍵字查詢條件。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回分頁系統使用者列表與總筆數。</returns>
     [HttpGet]
     public async Task<ActionResult> List([FromQuery] ListQuery query, CancellationToken cancellationToken) =>
         TryPlatform("platform.system_users", "read", out _) ? Ok(await service.ListAsync(query, cancellationToken)) : Forbidden();
 
+    /// <summary>
+    /// 建立新平台系統管理員帳號。
+    /// </summary>
+    /// <param name="request">帳號建立內容。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回建立成功之使用者 ID 物件。</returns>
     [HttpPost]
     public async Task<ActionResult> Create(CreateSystemUserRequest request, CancellationToken cancellationToken) =>
         TryPlatform("platform.system_users", "create", out var scope) ? ToResult(await service.CreateAsync(scope, request, cancellationToken)) : Forbidden();
 
+    /// <summary>
+    /// 更新指定系統管理員帳號之資料、角色或啟用狀態。
+    /// </summary>
+    /// <param name="userId">系統使用者識別碼。</param>
+    /// <param name="request">更新資料內容。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回更新結果。</returns>
     [HttpPatch("{userId:guid}")]
     public async Task<ActionResult> Update(Guid userId, UpdateSystemUserRequest request, CancellationToken cancellationToken) =>
         TryPlatform("platform.system_users", "update", out var scope) ? ToResult(await service.UpdateAsync(scope, userId, request, cancellationToken)) : Forbidden();
 
+    /// <summary>
+    /// 重設系統管理員之密碼，並註銷其所有現存 Refresh Token。
+    /// </summary>
+    /// <param name="userId">系統使用者識別碼。</param>
+    /// <param name="request">新密碼請求物件。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回重設結果。</returns>
     [HttpPost("{userId:guid}/reset-password")]
     public async Task<ActionResult> ResetPassword(Guid userId, ResetPasswordRequest request, CancellationToken cancellationToken) =>
         TryPlatform("platform.system_users", "update", out var scope, "reset_password") ? ToResult(await service.ResetPasswordAsync(scope, userId, request, cancellationToken)) : Forbidden();
 }
 
-/// <summary>系統帳號管理。</summary>
+/// <summary>
+/// 平台系統管理員帳號管理業務服務。
+/// </summary>
+/// <param name="db">資料庫上下文實體。</param>
+/// <param name="audit">系統稽核日誌服務實體。</param>
 public sealed class SystemUserService(QuoteDbContext db, AuditService audit)
 {
-    /// <summary>系統帳號列表：關鍵字比對帳號、姓名、Email，分頁由資料庫處理。</summary>
+    /// <summary>
+    /// 條件分頁查詢系統帳號清單。
+    /// </summary>
+    /// <param name="query">分頁與關鍵字條件。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回分頁資料物件。</returns>
     public async Task<object> ListAsync(ListQuery query, CancellationToken cancellationToken)
     {
         var users = db.Users.AsNoTracking().Where(value => value.SystemRoleId != null);
@@ -49,6 +104,13 @@ public sealed class SystemUserService(QuoteDbContext db, AuditService audit)
         return new { total, page = query.PageValue, pageSize = query.PageSizeValue, items };
     }
 
+    /// <summary>
+    /// 建立新系統帳號並雜湊密碼。
+    /// </summary>
+    /// <param name="scope">當前已驗證之請求範圍。</param>
+    /// <param name="request">帳號資料內容。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回新建立之使用者物件結果。</returns>
     public async Task<ServiceResult<object>> CreateAsync(RequestScope scope, CreateSystemUserRequest request, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Account) || string.IsNullOrWhiteSpace(request.DisplayName)) return ServiceResult<object>.BadRequest("請輸入帳號與姓名。");
@@ -65,6 +127,14 @@ public sealed class SystemUserService(QuoteDbContext db, AuditService audit)
         return ServiceResult<object>.Created(new { user.Id });
     }
 
+    /// <summary>
+    /// 更新指定系統帳號資料或角色。
+    /// </summary>
+    /// <param name="scope">當前已驗證之請求範圍。</param>
+    /// <param name="userId">使用者識別碼。</param>
+    /// <param name="request">更新資料內容。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回更新結果。</returns>
     public async Task<ServiceResult<object>> UpdateAsync(RequestScope scope, Guid userId, UpdateSystemUserRequest request, CancellationToken cancellationToken)
     {
         var user = await db.Users.SingleOrDefaultAsync(value => value.Id == userId && value.SystemRoleId != null, cancellationToken);
@@ -86,6 +156,14 @@ public sealed class SystemUserService(QuoteDbContext db, AuditService audit)
         return ServiceResult<object>.Ok(new { user.Id });
     }
 
+    /// <summary>
+    /// 重設指定系統帳號之登入密碼並撤銷其所有現存 Token。
+    /// </summary>
+    /// <param name="scope">當前已驗證之請求範圍。</param>
+    /// <param name="userId">使用者識別碼。</param>
+    /// <param name="request">重設密碼內容。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回執行結果。</returns>
     public async Task<ServiceResult<Empty>> ResetPasswordAsync(RequestScope scope, Guid userId, ResetPasswordRequest request, CancellationToken cancellationToken)
     {
         var user = await db.Users.SingleOrDefaultAsync(value => value.Id == userId && value.SystemRoleId != null, cancellationToken);

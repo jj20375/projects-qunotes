@@ -5,36 +5,87 @@ using QuotePlatform.Api.Modules.Common;
 
 namespace QuotePlatform.Api.Modules.Administration;
 
+/// <summary>
+/// 建立組織部門請求契約。
+/// </summary>
+/// <param name="ParentId">上層部門唯一識別碼（必填，公司開通時已具備根部門）。</param>
+/// <param name="Name">部門名稱。</param>
+/// <param name="Code">部門代碼（選填，在同公司內具唯一性）。</param>
+/// <param name="SortOrder">同層排列排序順序號碼。</param>
 public sealed record CreateDepartmentRequest(Guid? ParentId, string? Name, string? Code, int? SortOrder);
+
+/// <summary>
+/// 更新組織部門請求契約。
+/// </summary>
+/// <param name="ParentId">新的上層部門 ID（若需移動階層時傳入）。</param>
+/// <param name="Name">部門名稱。</param>
+/// <param name="Code">部門代碼。</param>
+/// <param name="SortOrder">排序順序。</param>
+/// <param name="IsActive">是否啟用。</param>
 public sealed record UpdateDepartmentRequest(Guid? ParentId, string? Name, string? Code, int? SortOrder, bool? IsActive);
 
-/// <summary>目前公司的部門樹（company scope）。</summary>
+/// <summary>
+/// 公司組織架構部門管理控制器（公司租戶範圍）。
+/// </summary>
+/// <param name="service">組織部門領域服務實體。</param>
 [Route("api/admin/departments")]
 public sealed class DepartmentsController(DepartmentService service) : ScopedControllerBase
 {
-    /// <summary>部門清單也是帳號管理選部門的來源，因此 company.users:read 也可讀取。</summary>
+    /// <summary>
+    /// 取得當前公司完整組織部門清單（包含階層深度與隸屬成員計數）。
+    /// </summary>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回部門資料陣列。</returns>
     [HttpGet]
     public async Task<ActionResult> List(CancellationToken cancellationToken) =>
         TryCompany("company.departments", "read", out _) || TryCompany("company.users", "read", out _)
             ? Ok(await service.ListAsync(cancellationToken))
             : Forbidden();
 
+    /// <summary>
+    /// 建立新部門並自動維護閉包表（Closure Table）之階層關係路徑。
+    /// </summary>
+    /// <param name="request">部門建立輸入內容。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回建立成功之部門 ID 物件。</returns>
     [HttpPost]
     public async Task<ActionResult> Create(CreateDepartmentRequest request, CancellationToken cancellationToken) =>
         TryCompany("company.departments", "create", out var scope) ? ToResult(await service.CreateAsync(scope, request, cancellationToken)) : Forbidden();
 
+    /// <summary>
+    /// 更新指定部門資料或調整從屬上層關係（支援跨樹移動）。
+    /// </summary>
+    /// <param name="departmentId">部門唯一識別碼。</param>
+    /// <param name="request">更新資料內容。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回更新結果。</returns>
     [HttpPatch("{departmentId:guid}")]
     public async Task<ActionResult> Update(Guid departmentId, UpdateDepartmentRequest request, CancellationToken cancellationToken) =>
         TryCompany("company.departments", "update", out var scope) ? ToResult(await service.UpdateAsync(scope, departmentId, request, cancellationToken)) : Forbidden();
 
+    /// <summary>
+    /// 刪除組織部門（若仍有成員或子部門則拒絕刪除；根部門不可刪除）。
+    /// </summary>
+    /// <param name="departmentId">部門唯一識別碼。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回刪除結果。</returns>
     [HttpDelete("{departmentId:guid}")]
     public async Task<ActionResult> Delete(Guid departmentId, CancellationToken cancellationToken) =>
         TryCompany("company.departments", "delete", out var scope) ? ToResult(await service.DeleteAsync(scope, departmentId, cancellationToken)) : Forbidden();
 }
 
-/// <summary>部門 CRUD 與移動；所有查詢經 Global Query Filter 限定在 JWT 公司內。</summary>
+/// <summary>
+/// 組織部門管理與閉包階層樹業務服務。
+/// </summary>
+/// <param name="db">資料庫上下文實體。</param>
+/// <param name="audit">系統稽核日誌服務實體。</param>
 public sealed class DepartmentService(QuoteDbContext db, AuditService audit)
 {
+    /// <summary>
+    /// 取得公司部門樹列表。
+    /// </summary>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回包含階層深度與成員統計之部門清單。</returns>
     public async Task<IReadOnlyList<object>> ListAsync(CancellationToken cancellationToken)
     {
         var memberCounts = await db.CompanyMemberships.AsNoTracking()
@@ -60,6 +111,13 @@ public sealed class DepartmentService(QuoteDbContext db, AuditService audit)
         }).ToList();
     }
 
+    /// <summary>
+    /// 建立新部門節點。
+    /// </summary>
+    /// <param name="scope">當前已驗證之請求範圍。</param>
+    /// <param name="request">部門建立請求資料。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回新建立之部門物件。</returns>
     public async Task<ServiceResult<object>> CreateAsync(RequestScope scope, CreateDepartmentRequest request, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Name)) return ServiceResult<object>.BadRequest("請輸入部門名稱。");
@@ -73,6 +131,14 @@ public sealed class DepartmentService(QuoteDbContext db, AuditService audit)
         return ServiceResult<object>.Created(new { department.Id });
     }
 
+    /// <summary>
+    /// 更新指定部門並重新計算樹狀閉包深度。
+    /// </summary>
+    /// <param name="scope">當前已驗證之請求範圍。</param>
+    /// <param name="departmentId">部門識別碼。</param>
+    /// <param name="request">更新資料內容。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回更新結果。</returns>
     public async Task<ServiceResult<object>> UpdateAsync(RequestScope scope, Guid departmentId, UpdateDepartmentRequest request, CancellationToken cancellationToken)
     {
         var department = await db.Departments.SingleOrDefaultAsync(value => value.Id == departmentId, cancellationToken);
@@ -109,6 +175,13 @@ public sealed class DepartmentService(QuoteDbContext db, AuditService audit)
         return ServiceResult<object>.Ok(new { department.Id });
     }
 
+    /// <summary>
+    /// 刪除組織部門及其在閉包表中的所有路徑。
+    /// </summary>
+    /// <param name="scope">當前已驗證之請求範圍。</param>
+    /// <param name="departmentId">部門識別碼。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回刪除結果。</returns>
     public async Task<ServiceResult<Empty>> DeleteAsync(RequestScope scope, Guid departmentId, CancellationToken cancellationToken)
     {
         var department = await db.Departments.SingleOrDefaultAsync(value => value.Id == departmentId, cancellationToken);

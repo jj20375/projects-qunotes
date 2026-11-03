@@ -6,33 +6,89 @@ using QuotePlatform.Api.Modules.Common;
 
 namespace QuotePlatform.Api.Modules.Administration;
 
+/// <summary>
+/// 建立新租戶公司與初始管理員帳號之輸入契約。
+/// </summary>
+/// <param name="Name">公司名稱。</param>
+/// <param name="Slug">公司租戶唯一網址代碼（長度 2~50 小寫英數與連字號）。</param>
+/// <param name="TaxId">統一編號。</param>
+/// <param name="Phone">代表電話。</param>
+/// <param name="Address">登記地址。</param>
+/// <param name="AdminAccount">初始最高管理員登入帳號。</param>
+/// <param name="AdminDisplayName">初始管理員姓名。</param>
+/// <param name="AdminEmail">初始管理員電子郵件。</param>
+/// <param name="AdminPassword">初始管理員密碼。</param>
 public sealed record CreateCompanyRequest(string? Name, string? Slug, string? TaxId, string? Phone, string? Address, string? AdminAccount, string? AdminDisplayName, string? AdminEmail, string? AdminPassword);
+
+/// <summary>
+/// 更新租戶公司基本資料與權限旗標之輸入契約。
+/// </summary>
+/// <param name="Name">公司名稱。</param>
+/// <param name="TaxId">統一編號。</param>
+/// <param name="Phone">電話號碼。</param>
+/// <param name="Address">地址。</param>
+/// <param name="Status">營運狀態（active 或 suspended）。</param>
+/// <param name="IsRoleCrudConfigurationEnabled">是否允許該公司自訂角色 CRUD。</param>
+/// <param name="IsRoleOptionConfigurationEnabled">是否允許該公司配置角色細部功能選項。</param>
 public sealed record UpdateCompanyRequest(string? Name, string? TaxId, string? Phone, string? Address, string? Status, bool? IsRoleCrudConfigurationEnabled, bool? IsRoleOptionConfigurationEnabled);
 
-/// <summary>平台管理公司（platform scope）。</summary>
+/// <summary>
+/// 平台公司管理控制器（平台管理員專屬 platform scope）。
+/// 負責租戶公司的開通、狀態變更與權限旗標配置。
+/// </summary>
+/// <param name="service">公司管理核心業務服務實體。</param>
 [Route("api/platform/companies")]
 public sealed class CompaniesController(CompanyService service) : ScopedControllerBase
 {
+    /// <summary>
+    /// 分頁查詢所有註冊之租戶公司清單（支援名稱、代碼與統編關鍵字搜尋）。
+    /// </summary>
+    /// <param name="query">分頁與關鍵字條件。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回分頁公司資料與成員人數統計。</returns>
     [HttpGet]
     public async Task<ActionResult> List([FromQuery] ListQuery query, CancellationToken cancellationToken) =>
         TryPlatform("platform.companies", "read", out _) ? Ok(await service.ListAsync(query, cancellationToken)) : Forbidden();
 
+    /// <summary>
+    /// 開通新租戶公司並初始化其最高管理員帳號、預設部門與預設角色。
+    /// </summary>
+    /// <param name="request">公司與管理員帳號輸入內容。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回新開通公司之 ID 與代碼。</returns>
     [HttpPost]
     public async Task<ActionResult> Create(CreateCompanyRequest request, CancellationToken cancellationToken) =>
         TryPlatform("platform.companies", "create", out var scope) ? ToResult(await service.CreateAsync(scope, request, cancellationToken)) : Forbidden();
 
+    /// <summary>
+    /// 更新指定公司之基本資料或停權狀態。
+    /// </summary>
+    /// <param name="companyId">公司唯一識別碼。</param>
+    /// <param name="request">更新資料內容。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回更新結果。</returns>
     [HttpPatch("{companyId:guid}")]
     public async Task<ActionResult> Update(Guid companyId, UpdateCompanyRequest request, CancellationToken cancellationToken) =>
         TryPlatform("platform.companies", "update", out var scope) ? ToResult(await service.UpdateAsync(scope, companyId, request, cancellationToken)) : Forbidden();
 }
 
-/// <summary>公司列表、開通與狀態管理。</summary>
+/// <summary>
+/// 租戶公司管理與初始化領域服務。
+/// </summary>
+/// <param name="db">資料庫上下文實體。</param>
+/// <param name="provisioner">租戶自動佈建服務實體。</param>
+/// <param name="audit">稽核紀錄服務實體。</param>
 public sealed partial class CompanyService(QuoteDbContext db, CompanyProvisioner provisioner, AuditService audit)
 {
     [GeneratedRegex("^[a-z0-9][a-z0-9-]{1,49}$")]
     private static partial Regex SlugPattern();
 
-    /// <summary>公司列表：關鍵字比對名稱、代碼、統編，分頁由資料庫處理。</summary>
+    /// <summary>
+    /// 條件分頁查詢公司列表。
+    /// </summary>
+    /// <param name="query">查詢參數。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回包含成員數統計之分頁清單。</returns>
     public async Task<object> ListAsync(ListQuery query, CancellationToken cancellationToken)
     {
         // platform scope 沒有 company_id，跨公司統計必須明確忽略 query filter。
@@ -69,6 +125,13 @@ public sealed partial class CompanyService(QuoteDbContext db, CompanyProvisioner
         return new { total, page = query.PageValue, pageSize = query.PageSizeValue, items };
     }
 
+    /// <summary>
+    /// 建立並開通新公司。
+    /// </summary>
+    /// <param name="scope">當前已驗證之請求範圍。</param>
+    /// <param name="request">公司與管理員輸入契約。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回建立後公司物件。</returns>
     public async Task<ServiceResult<object>> CreateAsync(RequestScope scope, CreateCompanyRequest request, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Name)) return ServiceResult<object>.BadRequest("請輸入公司名稱。");
@@ -88,6 +151,14 @@ public sealed partial class CompanyService(QuoteDbContext db, CompanyProvisioner
         return ServiceResult<object>.Created(new { company.Id, company.Name, company.Slug });
     }
 
+    /// <summary>
+    /// 更新指定公司設定與狀態。
+    /// </summary>
+    /// <param name="scope">當前已驗證之請求範圍。</param>
+    /// <param name="companyId">公司唯一識別碼。</param>
+    /// <param name="request">更新資料內容。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回更新結果。</returns>
     public async Task<ServiceResult<object>> UpdateAsync(RequestScope scope, Guid companyId, UpdateCompanyRequest request, CancellationToken cancellationToken)
     {
         var company = await db.Companies.SingleOrDefaultAsync(value => value.Id == companyId, cancellationToken);

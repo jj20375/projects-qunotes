@@ -5,10 +5,32 @@ using QuotePlatform.Api.Modules.Common;
 
 namespace QuotePlatform.Api.Modules.Files;
 
+/// <summary>
+/// 申請附件上傳工作階段請求契約。
+/// </summary>
+/// <param name="OwnerType">擁有者業務實體類型（project、quote、order、shipment、warranty、invoice）。</param>
+/// <param name="OwnerId">擁有者業務實體唯一識別碼。</param>
+/// <param name="FileName">原始檔案名稱。</param>
+/// <param name="Size">檔案大小（位元組）。</param>
+/// <param name="Category">自訂分類標籤。</param>
+/// <param name="Note">備註說明。</param>
 public sealed record CreateUploadRequest(string? OwnerType, Guid OwnerId, string? FileName, long Size, string? Category, string? Note);
+
+/// <summary>
+/// file-server 完成檔案儲存後回呼通知之請求契約。
+/// </summary>
+/// <param name="Size">實際接收之檔案位元組大小。</param>
+/// <param name="Sha256">檔案 SHA-256 雜湊摘要字串。</param>
 public sealed record UploadCompletedRequest(long Size, string? Sha256);
 
-/// <summary>附件所屬對象的存取判斷。</summary>
+/// <summary>
+/// 附件所屬業務對象之存取權限評估結果。
+/// </summary>
+/// <param name="Project">專案資料範圍存取評估物件。</param>
+/// <param name="PermissionCode">對應之權限資源代碼。</param>
+/// <param name="CanRead">是否具備檢視權限。</param>
+/// <param name="CanWrite">是否具備上傳/修改權限。</param>
+/// <param name="CanDownload">是否具備下載檔案本體權限。</param>
 public sealed record AttachmentOwnerAccess(ProjectAccess Project, string PermissionCode, bool CanRead, bool CanWrite, bool CanDownload);
 
 /// <summary>

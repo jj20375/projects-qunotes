@@ -5,13 +5,53 @@ using QuotePlatform.Api.Modules.Common;
 
 namespace QuotePlatform.Api.Modules.Identity;
 
+/// <summary>
+/// 使用者登入身分驗證請求契約。
+/// </summary>
+/// <param name="Account">登入帳號名稱。</param>
+/// <param name="Password">明文密碼。</param>
+/// <param name="CaptchaId">圖形驗證碼識別 ID（若啟用時必填）。</param>
+/// <param name="CaptchaCode">使用者輸入之驗證碼文字。</param>
 public sealed record LoginRequest(string? Account, string? Password, string? CaptchaId, string? CaptchaCode);
+
+/// <summary>
+/// 切換工作租戶或管理範圍請求契約。
+/// </summary>
+/// <param name="ScopeKind">目標範圍類型（platform 或 company）。</param>
+/// <param name="CompanyId">目標公司唯一識別碼（切換平台時為 null）。</param>
 public sealed record SelectScopeRequest(string? ScopeKind, Guid? CompanyId);
+
+/// <summary>
+/// 驗證成功後簽發之 Access Token 封包。
+/// </summary>
+/// <param name="AccessToken">經 HMAC-SHA256 簽署完成之 JWT 緊湊字串。</param>
+/// <param name="ExpiresAt">權杖過期時間（UTC）。</param>
 public sealed record AuthResponse(string AccessToken, DateTimeOffset ExpiresAt);
+
+/// <summary>
+/// 使用者可切換之租戶工作範圍選項。
+/// </summary>
+/// <param name="ScopeKind">範圍類型（platform 或 company）。</param>
+/// <param name="CompanyId">公司識別碼。</param>
+/// <param name="Name">公司或平台顯示名稱。</param>
+/// <param name="IsImpersonation">是否為平台管理員模擬進入其他公司。</param>
 public sealed record ScopeOption(string ScopeKind, Guid? CompanyId, string Name, bool IsImpersonation);
+
+/// <summary>
+/// 導覽選單樹節點資料契約。
+/// </summary>
+/// <param name="Code">功能模組代碼。</param>
+/// <param name="Name">顯示名稱。</param>
+/// <param name="RoutePath">前端路由路徑（若是分類父層則為 null）。</param>
+/// <param name="Children">子功能節點清單。</param>
 public sealed record MenuNode(string Code, string Name, string? RoutePath, IReadOnlyList<MenuNode> Children);
 
-/// <summary>簽發結果；refresh token 明文只交給 Controller 寫入 HttpOnly cookie。</summary>
+/// <summary>
+/// 權杖簽發結果實體；Refresh Token 明文僅供 Controller 寫入 HttpOnly Cookie。
+/// </summary>
+/// <param name="Response">傳回前端之 Access Token 封包。</param>
+/// <param name="RefreshToken">明文 Refresh Token 字串。</param>
+/// <param name="RefreshExpiresAt">Refresh Token 到期時間。</param>
 public sealed record IssuedSession(AuthResponse Response, string RefreshToken, DateTimeOffset RefreshExpiresAt);
 
 /// <summary>登入、refresh token 輪替、工作範圍切換與權限選單。</summary>

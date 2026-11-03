@@ -4,7 +4,13 @@ using QuotePlatform.Api.Modules.Common;
 
 namespace QuotePlatform.Api.Modules.Dashboard;
 
-/// <summary>Dashboard 查詢條件。year 為會計年度（以起始月所在的西元年命名）。</summary>
+/// <summary>
+/// Dashboard 戰情查詢條件契約；Year 為會計年度（以起始月所在的西元年命名）。
+/// </summary>
+/// <param name="Year">會計年度（西元年）。</param>
+/// <param name="Metric">衡量口徑（accepted 成交報價、orders 訂單、invoiced 已開發票）。</param>
+/// <param name="DepartmentId">鎖定部門 ID。</param>
+/// <param name="OwnerUserId">鎖定特定負責業務 ID。</param>
 public sealed record DashboardQuery(int? Year, string? Metric, Guid? DepartmentId, Guid? OwnerUserId);
 
 /// <summary>單筆業績資料：日期（台灣時間）、未稅金額、專案負責人。</summary>

@@ -6,19 +6,43 @@ using QuotePlatform.Api.Modules.Common;
 
 namespace QuotePlatform.Api.Modules.Quotes;
 
+/// <summary>
+/// 確認匯入結果並正式產生報價單草稿請求契約。
+/// </summary>
+/// <param name="ProjectId">目標歸屬專案識別碼。</param>
+/// <param name="Quote">確認後之報價單表頭與品項明細資料。</param>
 public sealed record ConfirmImportRequest(Guid ProjectId, QuoteInput Quote);
+
+/// <summary>
+/// 自訂 Excel 欄位與儲存格對照範本輸入契約。
+/// </summary>
+/// <param name="Name">對照範本名稱。</param>
+/// <param name="SheetName">指定工作表名稱（選填）。</param>
+/// <param name="HeaderRow">表頭所在列號。</param>
+/// <param name="DataStartRow">品項資料起始列號。</param>
+/// <param name="Columns">品項明細欄位對照字典（欄位名對映 Excel 欄位字母）。</param>
+/// <param name="Cells">表頭儲存格對照字典（欄位名對映儲存格位置如 C3）。</param>
 public sealed record MappingProfileInput(string? Name, string? SheetName, int? HeaderRow, int? DataStartRow, Dictionary<string, string>? Columns, Dictionary<string, string>? Cells);
 
 /// <summary>
-/// 報價匯入（兩階段）：上傳 → 解析成預覽 → 使用者修正 → 確認後建立報價草稿。
-/// 解析錯誤不會寫進正式資料；Excel 範本需 <c>quotes:import_excel</c>，舊報價需 <c>quotes:import_legacy</c>，
-/// 圖像識別（照片、掃描圖、PDF）需 <c>quotes:import_ocr</c> 且伺服器已設定 Claude 或 Gemini 的金鑰。
+/// 報價試算表匯入與 OCR 圖文辨識管理控制器。
+/// 流程採兩階段設計：上傳檔案解析成預覽 → 畫面檢視修正 → 確認後正式建立報價單草稿。
 /// </summary>
+/// <param name="service">報價匯入解析業務服務實體。</param>
+/// <param name="ocr">報價 OCR 圖文辨識服務實體。</param>
 [Route("api")]
 public sealed class QuoteImportController(QuoteImportService service, QuoteOcrService ocr) : ScopedControllerBase
 {
     private const long MaxFileBytes = 10 * 1024 * 1024;
 
+    /// <summary>
+    /// 上傳試算表或掃描圖片並啟動第一階段解析，產生預覽工作資料。
+    /// </summary>
+    /// <param name="file">上傳之檔案物件（.xlsx 或 圖片/PDF）。</param>
+    /// <param name="kind">匯入類型（excel_template、legacy_excel、ocr）。</param>
+    /// <param name="mappingProfileId">自訂對照範本 ID（legacy_excel 專用）。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回匯入預覽工作物件與解析結果。</returns>
     [HttpPost("quote-imports")]
     [RequestSizeLimit(MaxFileBytes + 64 * 1024)]
     public async Task<ActionResult> Upload([FromForm] IFormFile? file, [FromForm] string? kind, [FromForm] Guid? mappingProfileId, CancellationToken cancellationToken)
@@ -33,43 +57,99 @@ public sealed class QuoteImportController(QuoteImportService service, QuoteOcrSe
         return ToResult(await service.UploadAsync(scope, stream, file.FileName, kind ?? ImportKinds.ExcelTemplate, mappingProfileId, cancellationToken));
     }
 
-    /// <summary>前端用來決定要不要顯示「圖像識別」選項，以及告知使用者檔案會送到哪一家。</summary>
+    /// <summary>
+    /// 查詢後端 OCR 圖文識別組態設定與啟用狀態。
+    /// </summary>
+    /// <returns>傳回 OCR 是否啟用與目前作用中之模型提供者（claude 或 gemini）。</returns>
     [HttpGet("quote-imports/options")]
     public ActionResult Options() =>
         TryCompany("quotes", "create", out _) ? Ok(new { ocrEnabled = ocr.Enabled, ocrProvider = ocr.Active is { Configured: true } active ? active.Provider : null }) : Forbidden();
 
+    /// <summary>
+    /// 取得指定匯入工作階段之預覽資料與解析明細。
+    /// </summary>
+    /// <param name="jobId">匯入工作識別碼。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回匯入工作狀態與預覽結構。</returns>
     [HttpGet("quote-imports/{jobId:guid}")]
     public async Task<ActionResult> Get(Guid jobId, CancellationToken cancellationToken) =>
         TryCompany("quotes", "create", out var scope) ? ToResult(await service.GetAsync(scope, jobId, cancellationToken)) : Forbidden();
 
+    /// <summary>
+    /// 第二階段：確認預覽修正結果並正式於目標專案建立報價單草稿。
+    /// </summary>
+    /// <param name="jobId">匯入工作識別碼。</param>
+    /// <param name="request">確認輸入資料與目標專案 ID。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回建立成功之報價單 ID 與單號。</returns>
     [HttpPost("quote-imports/{jobId:guid}/confirm")]
     public async Task<ActionResult> Confirm(Guid jobId, ConfirmImportRequest request, CancellationToken cancellationToken) =>
         TryCompany("quotes", "create", out var scope) ? ToResult(await service.ConfirmAsync(scope, jobId, request, cancellationToken)) : Forbidden();
 
+    /// <summary>
+    /// 查詢當前公司設定之自訂 Excel 對照範本清單。
+    /// </summary>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回對照範本陣列。</returns>
     [HttpGet("import-mapping-profiles")]
     public async Task<ActionResult> ListProfiles(CancellationToken cancellationToken) =>
         TryCompany("quotes", "create", out _, "import_legacy") ? Ok(await service.ListProfilesAsync(cancellationToken)) : Forbidden();
 
+    /// <summary>
+    /// 建立自訂 Excel 對照範本。
+    /// </summary>
+    /// <param name="input">對照範本資料。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回建立結果。</returns>
     [HttpPost("import-mapping-profiles")]
     public async Task<ActionResult> CreateProfile(MappingProfileInput input, CancellationToken cancellationToken) =>
         TryCompany("quotes", "create", out var scope, "import_legacy") ? ToResult(await service.SaveProfileAsync(scope, null, input, cancellationToken)) : Forbidden();
 
+    /// <summary>
+    /// 更新自訂 Excel 對照範本。
+    /// </summary>
+    /// <param name="profileId">對照範本識別碼。</param>
+    /// <param name="input">更新內容。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回更新結果。</returns>
     [HttpPut("import-mapping-profiles/{profileId:guid}")]
     public async Task<ActionResult> UpdateProfile(Guid profileId, MappingProfileInput input, CancellationToken cancellationToken) =>
         TryCompany("quotes", "create", out var scope, "import_legacy") ? ToResult(await service.SaveProfileAsync(scope, profileId, input, cancellationToken)) : Forbidden();
 
+    /// <summary>
+    /// 刪除自訂 Excel 對照範本。
+    /// </summary>
+    /// <param name="profileId">對照範本識別碼。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回刪除結果。</returns>
     [HttpDelete("import-mapping-profiles/{profileId:guid}")]
     public async Task<ActionResult> DeleteProfile(Guid profileId, CancellationToken cancellationToken) =>
         TryCompany("quotes", "create", out var scope, "import_legacy") ? ToResult(await service.DeleteProfileAsync(scope, profileId, cancellationToken)) : Forbidden();
 }
 
-/// <summary>匯入工作與舊報價對照設定。</summary>
+/// <summary>
+/// 報價匯入解析工作階段與舊報價對照範本管理領域服務。
+/// </summary>
+/// <param name="db">資料庫上下文實體。</param>
+/// <param name="quotes">報價核心領域服務實體。</param>
+/// <param name="ocr">OCR 圖文識別服務實體。</param>
+/// <param name="audit">系統稽核日誌服務實體。</param>
 public sealed class QuoteImportService(QuoteDbContext db, QuoteService quotes, QuoteOcrService ocr, AuditService audit)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly string[] ColumnFields = ["ItemCode", "Name", "Spec", "Unit", "Quantity", "UnitPrice", "DiscountRate", "Amount", "UnitCost", "Remark"];
     private static readonly string[] CellFields = ["ClientName", "ClientTaxId", "ClientAddress", "ContactName", "ContactPhone", "ContactEmail", "QuoteDate", "ValidUntil", "Title", "PaymentTerms", "DeliveryTerms", "Terms", "TaxType", "Discount", "SourceQuoteNo"];
 
+    /// <summary>
+    /// 處理上傳之 Excel 試算表串流並轉換為預覽結構。
+    /// </summary>
+    /// <param name="scope">當前已驗證之請求範圍。</param>
+    /// <param name="stream">檔案二進位串流。</param>
+    /// <param name="fileName">原始檔案名稱。</param>
+    /// <param name="kind">匯入類型。</param>
+    /// <param name="mappingProfileId">對照範本 ID。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回建立之匯入工作 DTO 結果。</returns>
     public async Task<ServiceResult<object>> UploadAsync(RequestScope scope, Stream stream, string fileName, string kind, Guid? mappingProfileId, CancellationToken cancellationToken)
     {
         if (kind is not (ImportKinds.ExcelTemplate or ImportKinds.LegacyExcel)) return ServiceResult<object>.BadRequest("匯入類型不正確。");
@@ -105,10 +185,16 @@ public sealed class QuoteImportService(QuoteDbContext db, QuoteService quotes, Q
             : ServiceResult<object>.Created(ToDto(job));
     }
 
-    /// <summary>圖像識別：檢查檔頭與大小 → 送 Claude 辨識 → 存成預覽。辨識失敗也留下紀錄（status=failed）。</summary>
+    /// <summary>
+    /// 處理上傳之照片、圖片或 PDF 並執行 AI OCR 報價辨識。
+    /// </summary>
+    /// <param name="scope">當前已驗證之請求範圍。</param>
+    /// <param name="stream">檔案二進位串流。</param>
+    /// <param name="fileName">原始檔案名稱。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回 OCR 辨識匯入工作 DTO 結果。</returns>
     public async Task<ServiceResult<object>> UploadOcrAsync(RequestScope scope, Stream stream, string fileName, CancellationToken cancellationToken)
     {
-        // 這次請求固定使用同一家與同一組設定，避免途中設定檔被修改。
         var recognizer = ocr.Active;
         if (recognizer is not { Configured: true }) return ServiceResult<object>.BadRequest("圖像識別尚未啟用，請管理員設定 Quote__AnthropicApiKey 或 Quote__GeminiApiKey。");
         var (model, strength) = recognizer.CurrentSettings;
@@ -135,13 +221,27 @@ public sealed class QuoteImportService(QuoteDbContext db, QuoteService quotes, Q
         return error is null ? ServiceResult<object>.Created(ToDto(job)) : ServiceResult<object>.BadRequest(error);
     }
 
+    /// <summary>
+    /// 取得匯入工作詳細預覽內容。
+    /// </summary>
+    /// <param name="scope">當前已驗證之請求範圍。</param>
+    /// <param name="jobId">匯入工作識別碼。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回匯入工作狀態物件。</returns>
     public async Task<ServiceResult<object>> GetAsync(RequestScope scope, Guid jobId, CancellationToken cancellationToken)
     {
         var job = await db.ImportJobs.AsNoTracking().SingleOrDefaultAsync(value => value.Id == jobId && value.CreatedBy == scope.UserId, cancellationToken);
         return job is null ? ServiceResult<object>.NotFound("找不到匯入工作。") : ServiceResult<object>.Ok(ToDto(job));
     }
 
-    /// <summary>以使用者修正後的內容建立報價草稿；同一份匯入只能確認一次。</summary>
+    /// <summary>
+    /// 確認匯入結果並正式建立報價單草稿。
+    /// </summary>
+    /// <param name="scope">當前已驗證之請求範圍。</param>
+    /// <param name="jobId">匯入工作識別碼。</param>
+    /// <param name="request">確認內容契約。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回建立成功之報價單資料。</returns>
     public async Task<ServiceResult<QuoteCreated>> ConfirmAsync(RequestScope scope, Guid jobId, ConfirmImportRequest request, CancellationToken cancellationToken)
     {
         var job = await db.ImportJobs.SingleOrDefaultAsync(value => value.Id == jobId && value.CreatedBy == scope.UserId, cancellationToken);
@@ -159,12 +259,25 @@ public sealed class QuoteImportService(QuoteDbContext db, QuoteService quotes, Q
         return created;
     }
 
+    /// <summary>
+    /// 查詢所有自訂 Excel 對照範本。
+    /// </summary>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回範本清單。</returns>
     public async Task<IReadOnlyList<object>> ListProfilesAsync(CancellationToken cancellationToken)
     {
         var profiles = await db.ImportMappingProfiles.AsNoTracking().OrderBy(value => value.Name).ToListAsync(cancellationToken);
         return profiles.Select(value => (object)new { value.Id, value.Name, value.SheetName, value.HeaderRow, value.DataStartRow, columns = ToSpec(value).Columns, cells = ToSpec(value).Cells }).ToList();
     }
 
+    /// <summary>
+    /// 新增或儲存自訂 Excel 對照範本。
+    /// </summary>
+    /// <param name="scope">當前已驗證之請求範圍。</param>
+    /// <param name="profileId">範本 ID（新增時為 null）。</param>
+    /// <param name="input">對照設定輸入資料。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回儲存後結果。</returns>
     public async Task<ServiceResult<object>> SaveProfileAsync(RequestScope scope, Guid? profileId, MappingProfileInput input, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(input.Name)) return ServiceResult<object>.BadRequest("請輸入設定名稱。");
@@ -198,6 +311,13 @@ public sealed class QuoteImportService(QuoteDbContext db, QuoteService quotes, Q
         return profileId is null ? ServiceResult<object>.Created(new { profile.Id }) : ServiceResult<object>.Ok(new { profile.Id });
     }
 
+    /// <summary>
+    /// 刪除自訂 Excel 對照範本。
+    /// </summary>
+    /// <param name="scope">當前已驗證之請求範圍。</param>
+    /// <param name="profileId">範本唯一識別碼。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回刪除結果。</returns>
     public async Task<ServiceResult<Empty>> DeleteProfileAsync(RequestScope scope, Guid profileId, CancellationToken cancellationToken)
     {
         var profile = await db.ImportMappingProfiles.SingleOrDefaultAsync(value => value.Id == profileId, cancellationToken);

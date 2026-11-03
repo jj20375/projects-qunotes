@@ -6,6 +6,20 @@ using QuotePlatform.Api.Modules.Quotes;
 
 namespace QuotePlatform.Api.Modules.Administration;
 
+/// <summary>
+/// 公司系統參數與單據抬頭設定輸入契約。
+/// </summary>
+/// <param name="DefaultTaxRate">預設營業稅率百分比（0~100）。</param>
+/// <param name="DefaultCurrency">預設報價幣別（3 碼英文如 TWD）。</param>
+/// <param name="QuoteValidDays">預設報價有效天數（1~365）。</param>
+/// <param name="DefaultTerms">預設報價條款文字。</param>
+/// <param name="FiscalYearStartMonth">會計年度起始月份（1~12）。</param>
+/// <param name="QuoteNumberPattern">報價單號命名規則範本字串。</param>
+/// <param name="EnglishName">公司英文名稱抬頭。</param>
+/// <param name="Phone">代表聯絡電話。</param>
+/// <param name="Address">公司地址。</param>
+/// <param name="LogoFileId">新上傳之 Logo 檔案識別碼。</param>
+/// <param name="RemoveLogo">是否移除現有 Logo 圖片。</param>
 public sealed record CompanySettingInput(
     decimal? DefaultTaxRate,
     string? DefaultCurrency,
@@ -19,16 +33,27 @@ public sealed record CompanySettingInput(
     Guid? LogoFileId,
     bool? RemoveLogo);
 
+/// <summary>
+/// 申請公司 Logo 上傳工作階段之請求契約。
+/// </summary>
+/// <param name="FileName">Logo 圖片檔案名稱。</param>
+/// <param name="Size">檔案大小（位元組）。</param>
 public sealed record LogoUploadRequest(string? FileName, long Size);
 
 /// <summary>
-/// 公司參數（company scope，company.settings）：報價預設稅率、幣別、有效天數、預設條款、報價單號規則、
-/// Dashboard 的會計年度起始月，以及報價單抬頭（英文名稱、電話、地址、Logo）。
-/// 公司名稱與統編屬於公司身分，由平台管理（公司開通）維護。
+/// 公司系統參數與單據抬頭設定管理控制器（公司租戶範圍，需 company.settings 權限）。
 /// </summary>
+/// <param name="db">資料庫上下文實體。</param>
+/// <param name="audit">稽核紀錄服務實體。</param>
+/// <param name="logos">公司 Logo 管理服務實體。</param>
 [Route("api/admin/settings")]
 public sealed class CompanySettingsController(QuoteDbContext db, AuditService audit, CompanyLogoService logos) : ScopedControllerBase
 {
+    /// <summary>
+    /// 取得當前公司之系統參數、單號規則預覽與單據抬頭設定。
+    /// </summary>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回公司設定與預覽物件。</returns>
     [HttpGet]
     public async Task<ActionResult> Get(CancellationToken cancellationToken)
     {
@@ -57,6 +82,12 @@ public sealed class CompanySettingsController(QuoteDbContext db, AuditService au
         });
     }
 
+    /// <summary>
+    /// 更新當前公司之系統參數與單據抬頭。
+    /// </summary>
+    /// <param name="input">設定輸入資料。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>成功傳回 204 NoContent。</returns>
     [HttpPut]
     public async Task<ActionResult> Update(CompanySettingInput input, CancellationToken cancellationToken)
     {
@@ -97,7 +128,12 @@ public sealed class CompanySettingsController(QuoteDbContext db, AuditService au
         return NoContent();
     }
 
-    /// <summary>申請上傳 Logo；上傳完成後以 PUT 的 <c>logoFileId</c> 套用。</summary>
+    /// <summary>
+    /// 申請上傳公司 Logo 圖片工作階段。
+    /// </summary>
+    /// <param name="request">Logo 檔案大小與名稱請求。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回直接上傳 file-server 網址與 Session 資訊。</returns>
     [HttpPost("logo-upload")]
     public async Task<ActionResult> LogoUpload(LogoUploadRequest request, CancellationToken cancellationToken) =>
         TryCompany("company.settings", "update", out var scope) ? ToResult(await logos.CreateUploadAsync(scope, request.FileName, request.Size, cancellationToken)) : Forbidden();
