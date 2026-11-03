@@ -111,7 +111,8 @@ public sealed class PresenceTracker(TimeProvider clock)
 
     private readonly Lock _gate = new();
     private readonly Dictionary<Guid, Member> _members = [];
-    private readonly Dictionary<string, Guid> _connections = new(StringComparer.Ordinal);
+    // 每條連線保存自己的身分：背景巡檢要用各連線建立時的 AuthVersion 比對，不能被同一人較新的分頁覆蓋。
+    private readonly Dictionary<string, ConnectionIdentity> _connections = new(StringComparer.Ordinal);
     private readonly Dictionary<(Guid From, Guid To), DateTimeOffset> _knocks = [];
 
     /// <summary>新連線；第一次上線或從閒置恢復時回傳要廣播的事件。</summary>
@@ -136,7 +137,7 @@ public sealed class PresenceTracker(TimeProvider clock)
             member.DisconnectedAt = null;
             member.LastActivity = now;
             member.Idle = false;
-            _connections[connectionId] = identity.MembershipId;
+            _connections[connectionId] = identity;
             return isNew || wasIdle ? Changed(member) : null;
         }
     }
@@ -147,7 +148,7 @@ public sealed class PresenceTracker(TimeProvider clock)
     {
         lock (_gate)
         {
-            if (!_connections.Remove(connectionId, out var membershipId) || !_members.TryGetValue(membershipId, out var member)) return;
+            if (!_connections.Remove(connectionId, out var connection) || !_members.TryGetValue(connection.MembershipId, out var member)) return;
             var now = clock.GetUtcNow();
             member.Connections.Remove(connectionId);
             if (member.OfficeConnectionId == connectionId)
@@ -210,7 +211,7 @@ public sealed class PresenceTracker(TimeProvider clock)
     /// <returns>連線身分；連線不存在時為 null。</returns>
     public ConnectionIdentity? Identity(string connectionId)
     {
-        lock (_gate) return Find(connectionId)?.Identity;
+        lock (_gate) return _connections.GetValueOrDefault(connectionId);
     }
 
     /// <summary>目前至少有一條連線的成員；寬限期中的人不算在線（不能被敲門）。</summary>
@@ -249,7 +250,7 @@ public sealed class PresenceTracker(TimeProvider clock)
     /// <returns>以連線代碼為鍵的身分對照。</returns>
     public IReadOnlyDictionary<string, ConnectionIdentity> AllConnections()
     {
-        lock (_gate) return _connections.ToDictionary(pair => pair.Key, pair => _members[pair.Value].Identity, StringComparer.Ordinal);
+        lock (_gate) return new Dictionary<string, ConnectionIdentity>(_connections, StringComparer.Ordinal);
     }
 
     /// <summary>
@@ -388,7 +389,7 @@ public sealed class PresenceTracker(TimeProvider clock)
     }
 
     private Member? Find(string connectionId) =>
-        _connections.TryGetValue(connectionId, out var membershipId) ? _members.GetValueOrDefault(membershipId) : null;
+        _connections.TryGetValue(connectionId, out var connection) ? _members.GetValueOrDefault(connection.MembershipId) : null;
 
     private IEnumerable<Member> InOffice(Guid companyId, Guid departmentId) =>
         _members.Values.Where(member => member.Identity.CompanyId == companyId && member.OfficeDepartmentId == departmentId);
@@ -474,5 +475,15 @@ public sealed class PresenceTracker(TimeProvider clock)
         tracker.RecordKnock(alice.MembershipId, bob.MembershipId);
         Check(tracker.ConsumeKnock(alice.MembershipId, bob.MembershipId), "敲門後可以回應");
         Check(!tracker.ConsumeKnock(alice.MembershipId, bob.MembershipId), "同一次敲門只能回應一次");
+        tracker.RecordKnock(alice.MembershipId, bob.MembershipId);
+        clock.Advance(PresenceTracker.KnockExpiry);
+        Check(!tracker.ConsumeKnock(alice.MembershipId, bob.MembershipId), "超過有效期限的敲門不能回應");
+
+        var dave = Identity(companyA, "Dave");
+        tracker.Connect("d1", dave, profile);
+        tracker.Connect("d2", dave with { AuthVersion = 2 }, profile);
+        var connections = tracker.AllConnections();
+        Check(connections["d1"].AuthVersion == 1 && connections["d2"].AuthVersion == 2, "同一人的各分頁各自保留連線時的 AuthVersion");
+        Check(tracker.Identity("d1")!.AuthVersion == 1, "Identity 回傳該連線自己的身分");
     }
 }
