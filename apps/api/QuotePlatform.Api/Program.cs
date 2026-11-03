@@ -49,6 +49,7 @@ if (args.SequenceEqual(["--self-test"]))
     AiSettings.AssertExamples();
     OfficeMapGenerator.AssertExamples();
     OfficeRules.AssertExamples();
+    PresenceTracker.AssertExamples();
     Console.WriteLine("self-test passed");
     return;
 }
