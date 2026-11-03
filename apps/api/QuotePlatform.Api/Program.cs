@@ -48,6 +48,7 @@ if (args.SequenceEqual(["--self-test"]))
     DocumentNumberPattern.AssertExamples();
     AiSettings.AssertExamples();
     OfficeMapGenerator.AssertExamples();
+    OfficeRules.AssertExamples();
     Console.WriteLine("self-test passed");
     return;
 }
