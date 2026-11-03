@@ -9,7 +9,8 @@ import dayjs, { type Dayjs } from 'dayjs';
 import { message, Modal } from 'ant-design-vue';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/vue-query';
 import DataTable, { type TableChange } from '@/app/components/DataTable.vue';
-import RemoteSelect, { type RemoteOption } from '@/app/components/RemoteSelect.vue';
+import OrderSelect from '@/app/components/OrderSelect.vue';
+import type { RemoteOption } from '@/app/components/RemoteSelect.vue';
 import { dataColumns } from '@/shared/table/data-table';
 import AttachmentList from '@/app/components/AttachmentList.vue';
 import InvoicePreviewDrawer from '@/app/components/InvoicePreviewDrawer.vue';
@@ -231,7 +232,7 @@ const columns = [
         </a-col>
         <a-col :span="12"><a-form-item label="收款到期日"><a-date-picker v-model:value="form.due" style="width: 100%" /></a-form-item></a-col>
         <a-col v-if="can('orders', 'read')" :span="24">
-          <a-form-item label="對應訂單" :required="!form.id || !!form.orderId"><RemoteSelect v-model:value="form.orderId" :fetch="fetchOrders" :initial-label="form.orderNo ?? undefined" placeholder="輸入訂單號碼搜尋，選擇後帶入金額" @pick="fillFromOrder" /></a-form-item>
+          <a-form-item label="對應訂單" :required="!form.id || !!form.orderId"><OrderSelect v-model:value="form.orderId" :fetch="fetchOrders" :initial-label="form.orderNo ?? undefined" :current-project-id="project.id" placeholder="輸入訂單號碼搜尋，選擇後帶入金額" @pick="fillFromOrder" /></a-form-item>
         </a-col>
         <a-col :span="12"><a-form-item label="買受人" extra="留空帶客戶發票抬頭"><a-input v-model:value="form.buyerName" /></a-form-item></a-col>
         <a-col :span="12"><a-form-item label="買受人統編"><a-input v-model:value="form.buyerTaxId" :maxlength="8" /></a-form-item></a-col>

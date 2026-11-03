@@ -8,7 +8,8 @@ import dayjs, { type Dayjs } from 'dayjs';
 import { message, Modal } from 'ant-design-vue';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/vue-query';
 import DataTable, { type TableChange } from '@/app/components/DataTable.vue';
-import RemoteSelect, { type RemoteOption } from '@/app/components/RemoteSelect.vue';
+import OrderSelect from '@/app/components/OrderSelect.vue';
+import type { RemoteOption } from '@/app/components/RemoteSelect.vue';
 import { dataColumns } from '@/shared/table/data-table';
 import AttachmentList from '@/app/components/AttachmentList.vue';
 import type { ProjectDetail } from '@/shared/services/business-service';
@@ -119,7 +120,7 @@ const columns = [
       <a-form-item label="保固單號" required><a-input v-model:value="form.warrantyNo" /></a-form-item>
       <a-form-item label="保固項目" required><a-input v-model:value="form.subject" placeholder="例如：伺服器硬體保固" /></a-form-item>
       <a-form-item label="保固期間" required><a-range-picker v-model:value="form.period" style="width: 100%" /></a-form-item>
-      <a-form-item v-if="can('orders', 'read')" label="對應訂單" :required="!form.id || !!form.orderId"><RemoteSelect v-model:value="form.orderId" :fetch="fetchOrders" :initial-label="form.orderNo ?? undefined" placeholder="輸入訂單號碼搜尋" /></a-form-item>
+      <a-form-item v-if="can('orders', 'read')" label="對應訂單" :required="!form.id || !!form.orderId"><OrderSelect v-model:value="form.orderId" :fetch="fetchOrders" :initial-label="form.orderNo ?? undefined" :current-project-id="project.id" /></a-form-item>
       <a-form-item label="保固條款"><a-textarea v-model:value="form.terms" :rows="3" /></a-form-item>
       <a-form-item label="備註"><a-textarea v-model:value="form.note" :rows="2" /></a-form-item>
     </a-form>

@@ -205,6 +205,25 @@ await step('發票號碼即時防呆：重複時帶出那張發票、訂單與�
   assert.equal((await call('POST', `/api/projects/${projectId}/invoices`, { token: accountant, body: { orderId, invoiceNo: voidedNo, invoiceDate: '2026-10-29', salesAmount: 100, taxAmount: 5 } })).status, 409);
 });
 
+await step('訂單內容預覽：帶出來源報價、所屬專案與底下發票統計；看不到的專案回 404', async () => {
+  const detail = await call('GET', `/api/orders/${orderId}`, { token: sales });
+  assert.equal(detail.status, 200, JSON.stringify(detail.data));
+  assert.equal(detail.data.orderNo, `PO-${suffix}`);
+  assert.equal(detail.data.total, 105000);
+  assert.equal(detail.data.quoteId, acceptedQuoteId);
+  assert.equal(detail.data.quoteNo.startsWith('Q'), true);
+  assert.equal(detail.data.project.id, projectId);
+  // 發票筆數與金額只算開立中的（作廢的不算），與發票列表一致
+  const issued = (await call('GET', `/api/projects/${projectId}/invoices?pageSize=100`, { token: sales })).data.items.filter((item) => item.orderId === orderId && item.status === 'issued');
+  assert.equal(detail.data.invoiceCount, issued.length);
+  assert.equal(detail.data.invoicedAmount, issued.reduce((sum, item) => sum + item.totalAmount, 0));
+  assert.equal(detail.data.shipmentCount, 0);
+  assert.equal(detail.data.warrantyCount, (await call('GET', `/api/projects/${projectId}/warranties?pageSize=100`, { token: sales })).data.items.filter((item) => item.orderId === orderId).length);
+  assert.equal((await call('GET', `/api/orders/${orderId}`, { token: otherSales })).status, 404, '其他業務看不到這個專案的訂單');
+  assert.equal((await call('GET', `/api/orders/00000000-0000-0000-0000-000000000001`, { token: sales })).status, 404);
+  assert.equal((await call('GET', `/api/orders/${orderId}`, {})).status, 401);
+});
+
 let shipmentId;
 await step('出貨單：掛在訂單下（必填、不能選已取消的訂單），附件與訂單權限一致；訂單底下有出貨單不能刪', async () => {
   const body = { orderId, shipmentNo: `SH-${suffix}-1`, shipDate: '2026-11-01', receiverName: '王小明', deliveryAddress: '台北市信義區', trackingNo: `TRK-${suffix}` };

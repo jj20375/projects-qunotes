@@ -95,7 +95,16 @@ interface PagedResult {
 /** activeOnly：排除已取消的訂單（由後端過濾）；activeTotal 是整個專案（不含已取消）的訂單合計，不受分頁影響。 */
 export const listOrdersApi = (projectId: string, query: ListParams & { activeOnly?: boolean } = {}) =>
   apiRequest<Permissions & PagedResult & { activeTotal: number; items: Order[] }>(`/api/projects/${projectId}/orders`, { query });
-export const saveOrderApi = (projectId: string, order: Partial<Order>) =>
+/** 單筆訂單內容（預覽用）：含所屬專案、來源報價，以及底下發票／出貨單／保固單的筆數與已開發票金額。 */
+export interface OrderDetail extends Omit<Order, 'attachmentCount'> {
+  project: { id: string; projectNo: string; name: string };
+  shipmentCount: number;
+  warrantyCount: number;
+  invoiceCount: number;
+  invoicedAmount: number;
+}
+export const getOrderApi = (id: string) => apiRequest<OrderDetail>(`/api/orders/${id}`);
+export const saveOrderApi =(projectId: string, order: Partial<Order>) =>
   order.id ? apiRequest(`/api/orders/${order.id}`, { method: 'PUT', body: order }) : apiRequest(`/api/projects/${projectId}/orders`, { method: 'POST', body: order });
 export const deleteOrderApi = (id: string) => apiRequest(`/api/orders/${id}`, { method: 'DELETE' });
 

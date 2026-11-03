@@ -23,6 +23,10 @@ public sealed class ProjectDocumentsController(ProjectDocumentService service, S
     public async Task<ActionResult> ListOrders(Guid projectId, [FromQuery] bool? activeOnly, [FromQuery] ListQuery query, CancellationToken cancellationToken) =>
         TryCompany("orders", "read", out var scope) ? ToResult(await service.ListOrdersAsync(scope, projectId, activeOnly ?? false, query, cancellationToken)) : Forbidden();
 
+    [HttpGet("orders/{orderId:guid}")]
+    public async Task<ActionResult> GetOrder(Guid orderId, CancellationToken cancellationToken) =>
+        TryCompany("orders", "read", out var scope) ? ToResult(await service.GetOrderAsync(scope, orderId, cancellationToken)) : Forbidden();
+
     [HttpPost("projects/{projectId:guid}/orders")]
     public async Task<ActionResult> CreateOrder(Guid projectId, OrderInput input, CancellationToken cancellationToken) =>
         TryCompany("orders", "create", out var scope) ? ToResult(await service.SaveOrderAsync(scope, projectId, null, input, cancellationToken)) : Forbidden();

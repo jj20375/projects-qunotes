@@ -57,6 +57,36 @@ public sealed partial class ProjectDocumentService(QuoteDbContext db, ProjectAcc
         });
     }
 
+    /// <summary>單筆訂單內容（預覽用）：訂單資料、來源報價、所屬專案，以及底下出貨單／發票／保固單的筆數與已開發票金額。可見性跟著所屬專案。</summary>
+    public async Task<ServiceResult<object>> GetOrderAsync(RequestScope scope, Guid orderId, CancellationToken cancellationToken)
+    {
+        var order = await db.ProjectOrders.AsNoTracking().SingleOrDefaultAsync(value => value.Id == orderId, cancellationToken);
+        if (order is null) return ServiceResult<object>.NotFound("找不到訂單。");
+        var project = await access.GetAsync(scope, order.ProjectId, track: false, cancellationToken);
+        if (project is null) return ServiceResult<object>.NotFound("找不到訂單。");
+
+        var quoteNos = order.QuoteId is Guid quoteId ? await QuoteLabelsAsync([quoteId], cancellationToken) : [];
+        var invoices = db.ProjectInvoices.AsNoTracking().Where(value => value.OrderId == orderId && value.Status == "issued");
+        return ServiceResult<object>.Ok(new
+        {
+            order.Id,
+            order.QuoteId,
+            quoteNo = order.QuoteId is Guid id ? quoteNos.GetValueOrDefault(id) : null,
+            order.OrderNo,
+            order.OrderDate,
+            order.Amount,
+            order.TaxAmount,
+            order.Total,
+            order.Status,
+            order.Note,
+            project = new { project.Project.Id, project.Project.ProjectNo, project.Project.Name },
+            shipmentCount = await db.ProjectShipments.CountAsync(value => value.OrderId == orderId, cancellationToken),
+            warrantyCount = await db.ProjectWarranties.CountAsync(value => value.OrderId == orderId, cancellationToken),
+            invoiceCount = await invoices.CountAsync(cancellationToken),
+            invoicedAmount = await invoices.SumAsync(value => (decimal?)value.TotalAmount, cancellationToken) ?? 0,
+        });
+    }
+
     public async Task<ServiceResult<object>> SaveOrderAsync(RequestScope scope, Guid? projectId, Guid? orderId, OrderInput input, CancellationToken cancellationToken)
     {
         var order = orderId is Guid id ? await db.ProjectOrders.SingleOrDefaultAsync(value => value.Id == id, cancellationToken) : null;

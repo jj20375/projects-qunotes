@@ -8,7 +8,8 @@ import dayjs, { type Dayjs } from 'dayjs';
 import { message, Modal } from 'ant-design-vue';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/vue-query';
 import DataTable, { type TableChange } from '@/app/components/DataTable.vue';
-import RemoteSelect, { type RemoteOption } from '@/app/components/RemoteSelect.vue';
+import OrderSelect from '@/app/components/OrderSelect.vue';
+import type { RemoteOption } from '@/app/components/RemoteSelect.vue';
 import { dataColumns } from '@/shared/table/data-table';
 import AttachmentList from '@/app/components/AttachmentList.vue';
 import type { ProjectDetail } from '@/shared/services/business-service';
@@ -124,7 +125,7 @@ const columns = [
       <a-row :gutter="12">
         <a-col :span="24">
           <a-form-item label="對應訂單" required>
-            <RemoteSelect v-model:value="form.orderId" :fetch="fetchOrders" :initial-label="form.orderNo ?? undefined" placeholder="輸入訂單號碼搜尋" />
+            <OrderSelect v-model:value="form.orderId" :fetch="fetchOrders" :initial-label="form.orderNo ?? undefined" :current-project-id="project.id" />
           </a-form-item>
         </a-col>
         <a-col :span="14"><a-form-item label="出貨單號" required><a-input v-model:value="form.shipmentNo" /></a-form-item></a-col>

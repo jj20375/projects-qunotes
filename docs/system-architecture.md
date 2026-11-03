@@ -257,7 +257,7 @@ flowchart LR
   - `GET /api/auth/scopes?keyword=&offset=&limit=`：切換公司；平台管理員可進入所有公司，所以由後端搜尋與分頁：自己所屬的公司排前面，其餘依名稱排序，`limit` 預設 20、上限 50，`keyword` 同時過濾「平台管理」；第一頁（offset 0）一定帶出目前所在的公司。前端公司選單輸入文字時重新向後端查詢，捲到底時用 `offset` 載入下一頁（`AdminShell.vue`）。
 - 前端對應：`UserSelect.vue`、`ClientSelect.vue`、`ProjectSelect.vue` 輸入文字後 250 毫秒送出查詢；列表頁的搜尋框按 Enter 才送出，換頁與換每頁筆數會重新查詢。
 - 不再有「一次回傳全部」的列表：`GET /api/admin/users`、`/api/platform/companies`、`/api/platform/system-users` 以前回傳陣列，現在回傳上面的分頁格式。
-- 專案明細的各分頁（報價、訂單、出貨、發票、保固）一樣由後端分頁：`GET /api/projects/{id}/quotes|orders|shipments|invoices|warranties?keyword=&page=&pageSize=`，回傳 `{ total, page, pageSize, items }`（`total` 是符合條件的筆數）。分頁表頭的合計不受分頁與關鍵字影響，由後端對整個專案計算：訂單 `activeTotal`（不含已取消）、發票 `totalAmount`／`paidAmount`。報價依單號、版次排序，同一單號的各版本收合只是這一頁內的顯示。表單裡的「對應訂單」「來源報價」下拉用共用的 `RemoteSelect`，輸入關鍵字時向後端查詢（訂單加 `activeOnly=true` 排除已取消、報價以 `status` 篩選），只取第一頁 20 筆。
+- 專案明細的各分頁（報價、訂單、出貨、發票、保固）一樣由後端分頁：`GET /api/projects/{id}/quotes|orders|shipments|invoices|warranties?keyword=&page=&pageSize=`，回傳 `{ total, page, pageSize, items }`（`total` 是符合條件的筆數）。分頁表頭的合計不受分頁與關鍵字影響，由後端對整個專案計算：訂單 `activeTotal`（不含已取消）、發票 `totalAmount`／`paidAmount`。報價依單號、版次排序，同一單號的各版本收合只是這一頁內的顯示。表單裡的「對應訂單」（`OrderSelect`，旁邊有「查看訂單」開預覽抽屜）「來源報價」下拉用共用的 `RemoteSelect`，輸入關鍵字時向後端查詢（訂單加 `activeOnly=true` 排除已取消、報價以 `status` 篩選），只取第一頁 20 筆。
 - 例外（前端處理，資料量固定且小）：已完整載入的部門樹的顯示組裝、使用者剛上傳的匯入檔預覽、同一報價單號的各版本收合顯示（只在已由後端分頁取回的那一頁內）、個人有效權限表（目錄固定約數十項）、首頁 Dashboard 的「前 10 筆」小表（應收帳款、即將到期保固，後端只回前 10 筆）與月份表。
 
 第一階段已實作（✅）：
@@ -322,7 +322,7 @@ company scope（公司一律取自 JWT，路由不帶 companyId）
 第四階段已實作（✅）：
 
 ```
-✅ GET|POST /api/projects/{id}/orders、PUT|DELETE /api/orders/{id}                 訂單；必須對應已接受的報價，合計排除已取消
+✅ GET|POST /api/projects/{id}/orders、GET|PUT|DELETE /api/orders/{id}             訂單；必須對應已接受的報價，合計排除已取消；GET 單筆供「查看訂單」預覽（含所屬專案、來源報價、底下發票／出貨／保固統計）
 ✅ GET|POST /api/projects/{id}/shipments、PUT|DELETE /api/shipments/{id}           出貨單；必須對應未取消的訂單，權限沿用 orders
 ✅ GET|POST /api/projects/{id}/warranties、PUT|DELETE /api/warranties/{id}         保固；回傳 active／expiring（90 天內）／expired
 ✅ GET|POST /api/projects/{id}/invoices、PUT|DELETE /api/invoices/{id}             發票；號碼正規化為 AB-12345678、公司內唯一
