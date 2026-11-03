@@ -737,7 +737,42 @@ CREATE TABLE project_invoices (
 ) ENGINE=InnoDB COMMENT='專案統一發票與請款紀錄檔';
 
 -- =========================================================
--- 7. 循環關聯：表都建立後再補 FK
+-- 7. 虛擬辦公室
+-- =========================================================
+
+CREATE TABLE office_rooms (
+  Id           CHAR(36)     NOT NULL COMMENT '房間設定唯一識別碼',
+  CompanyId    CHAR(36)     NOT NULL COMMENT '所屬公司識別碼',
+  DepartmentId CHAR(36)     NOT NULL COMMENT '所屬部門識別碼（一個部門一間辦公室）',
+  Theme        VARCHAR(20)  NOT NULL DEFAULT 'wood' COMMENT '地圖主題（wood / carpet / dark）',
+  CreatedAt    DATETIME(6)  NOT NULL COMMENT '建立時間戳記（UTC）',
+  UpdatedAt    DATETIME(6)  NOT NULL COMMENT '最後更新時間戳記（UTC）',
+  PRIMARY KEY (Id),
+  UNIQUE KEY IX_office_rooms_CompanyId_DepartmentId (CompanyId, DepartmentId),
+  KEY IX_office_rooms_DepartmentId (DepartmentId),
+  CONSTRAINT FK_office_rooms_companies_CompanyId FOREIGN KEY (CompanyId) REFERENCES companies (Id) ON DELETE CASCADE,
+  CONSTRAINT FK_office_rooms_departments_DepartmentId FOREIGN KEY (DepartmentId) REFERENCES departments (Id) ON DELETE CASCADE
+) ENGINE=InnoDB COMMENT='部門虛擬辦公室房間設定檔';
+
+CREATE TABLE office_profiles (
+  Id           CHAR(36)     NOT NULL COMMENT '個人設定唯一識別碼',
+  CompanyId    CHAR(36)     NOT NULL COMMENT '所屬公司識別碼',
+  MembershipId CHAR(36)     NOT NULL COMMENT '所屬成員身分識別碼',
+  AvatarKey    VARCHAR(20)  NULL COMMENT '角色外觀鍵；NULL 表示依使用者雜湊的預設角色',
+  Status       VARCHAR(20)  NOT NULL DEFAULT 'available' COMMENT '手動狀態（available / busy / meeting / break / away）',
+  StatusText   VARCHAR(40)  NULL COMMENT '自訂狀態文字',
+  LastSeenAt   DATETIME(6)  NULL COMMENT '最後在線時間（UTC）',
+  UpdatedAt    DATETIME(6)  NOT NULL COMMENT '最後更新時間戳記（UTC）',
+  PRIMARY KEY (Id),
+  UNIQUE KEY IX_office_profiles_MembershipId (MembershipId),
+  KEY IX_office_profiles_CompanyId (CompanyId),
+  CONSTRAINT FK_office_profiles_companies_CompanyId FOREIGN KEY (CompanyId) REFERENCES companies (Id) ON DELETE CASCADE,
+  CONSTRAINT FK_office_profiles_company_memberships_MembershipId FOREIGN KEY (MembershipId) REFERENCES company_memberships (Id) ON DELETE CASCADE,
+  CONSTRAINT CK_office_profiles_Status CHECK (Status IN ('available', 'busy', 'meeting', 'break', 'away'))
+) ENGINE=InnoDB COMMENT='成員虛擬辦公室個人設定檔';
+
+-- =========================================================
+-- 8. 循環關聯：表都建立後再補 FK
 -- =========================================================
 
 ALTER TABLE companies

@@ -711,6 +711,106 @@ namespace QuotePlatform.Api.Migrations
                     b.ToTable("number_sequences", (string)null);
                 });
 
+            modelBuilder.Entity("QuotePlatform.Api.Infrastructure.OfficeProfile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)")
+                        .HasComment("個人設定唯一識別碼");
+
+                    b.Property<string>("AvatarKey")
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)")
+                        .HasComment("角色外觀鍵；NULL 表示依使用者雜湊的預設角色");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("char(36)")
+                        .HasComment("所屬公司識別碼");
+
+                    b.Property<DateTimeOffset?>("LastSeenAt")
+                        .HasColumnType("datetime(6)")
+                        .HasComment("最後在線時間（UTC）");
+
+                    b.Property<Guid>("MembershipId")
+                        .HasColumnType("char(36)")
+                        .HasComment("所屬成員身分識別碼");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)")
+                        .HasDefaultValue("available")
+                        .HasComment("手動狀態（available / busy / meeting / break / away）");
+
+                    b.Property<string>("StatusText")
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)")
+                        .HasComment("自訂狀態文字");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetime(6)")
+                        .HasComment("最後更新時間戳記（UTC）");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId");
+
+                    b.HasIndex("MembershipId")
+                        .IsUnique();
+
+                    b.ToTable("office_profiles", null, t =>
+                        {
+                            t.HasComment("成員虛擬辦公室個人設定檔");
+
+                            t.HasCheckConstraint("CK_office_profiles_Status", "Status IN ('available', 'busy', 'meeting', 'break', 'away')");
+                        });
+                });
+
+            modelBuilder.Entity("QuotePlatform.Api.Infrastructure.OfficeRoom", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)")
+                        .HasComment("房間設定唯一識別碼");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("char(36)")
+                        .HasComment("所屬公司識別碼");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)")
+                        .HasComment("建立時間戳記（UTC）");
+
+                    b.Property<Guid>("DepartmentId")
+                        .HasColumnType("char(36)")
+                        .HasComment("所屬部門識別碼（一個部門一間辦公室）");
+
+                    b.Property<string>("Theme")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)")
+                        .HasDefaultValue("wood")
+                        .HasComment("地圖主題（wood / carpet / dark）");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetime(6)")
+                        .HasComment("最後更新時間戳記（UTC）");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DepartmentId");
+
+                    b.HasIndex("CompanyId", "DepartmentId")
+                        .IsUnique();
+
+                    b.ToTable("office_rooms", null, t =>
+                        {
+                            t.HasComment("部門虛擬辦公室房間設定檔");
+                        });
+                });
+
             modelBuilder.Entity("QuotePlatform.Api.Infrastructure.Permission", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2045,6 +2145,36 @@ namespace QuotePlatform.Api.Migrations
                     b.HasOne("QuotePlatform.Api.Infrastructure.Company", null)
                         .WithMany()
                         .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("QuotePlatform.Api.Infrastructure.OfficeProfile", b =>
+                {
+                    b.HasOne("QuotePlatform.Api.Infrastructure.Company", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("QuotePlatform.Api.Infrastructure.CompanyMembership", null)
+                        .WithMany()
+                        .HasForeignKey("MembershipId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("QuotePlatform.Api.Infrastructure.OfficeRoom", b =>
+                {
+                    b.HasOne("QuotePlatform.Api.Infrastructure.Company", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("QuotePlatform.Api.Infrastructure.Department", null)
+                        .WithMany()
+                        .HasForeignKey("DepartmentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

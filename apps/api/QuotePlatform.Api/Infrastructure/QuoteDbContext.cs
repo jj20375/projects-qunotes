@@ -46,6 +46,8 @@ public sealed class QuoteDbContext(DbContextOptions<QuoteDbContext> options, Com
     public DbSet<ProjectShipment> ProjectShipments => Set<ProjectShipment>();
     public DbSet<ProjectWarranty> ProjectWarranties => Set<ProjectWarranty>();
     public DbSet<ProjectInvoice> ProjectInvoices => Set<ProjectInvoice>();
+    public DbSet<OfficeRoom> OfficeRooms => Set<OfficeRoom>();
+    public DbSet<OfficeProfile> OfficeProfiles => Set<OfficeProfile>();
 
     /// <summary>Global Query Filter 參考的公司；EF Core 每次查詢都會重新讀取這個屬性。</summary>
     public Guid? CurrentCompanyId => companyContext?.CompanyId;
@@ -206,6 +208,7 @@ public sealed class QuoteDbContext(DbContextOptions<QuoteDbContext> options, Com
         ConfigureBusiness(modelBuilder);
         ConfigureQuotes(modelBuilder);
         ConfigureDocuments(modelBuilder);
+        ConfigureOffice(modelBuilder);
 
         foreach (var entityType in modelBuilder.Model.GetEntityTypes().Where(value => typeof(ICompanyOwned).IsAssignableFrom(value.ClrType)))
         {
@@ -320,6 +323,47 @@ public sealed class QuoteDbContext(DbContextOptions<QuoteDbContext> options, Com
             entity.HasIndex(value => new { value.CompanyId, value.PaymentStatus, value.DueDate });
             entity.HasOne<Project>().WithMany().HasForeignKey(value => value.ProjectId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<ProjectOrder>().WithMany().HasForeignKey(value => value.OrderId).OnDelete(DeleteBehavior.SetNull);
+        });
+    }
+
+    /// <summary>部門虛擬辦公室：房間設定與成員個人設定；走動、聊天等即時狀態只存在記憶體。</summary>
+    private static void ConfigureOffice(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<OfficeRoom>(entity =>
+        {
+            entity.ToTable("office_rooms", table => table.HasComment("部門虛擬辦公室房間設定檔"));
+            entity.HasKey(value => value.Id);
+            entity.Property(value => value.Id).HasComment("房間設定唯一識別碼");
+            entity.Property(value => value.CompanyId).HasComment("所屬公司識別碼");
+            entity.Property(value => value.DepartmentId).HasComment("所屬部門識別碼（一個部門一間辦公室）");
+            entity.Property(value => value.Theme).HasMaxLength(20).IsRequired().HasDefaultValue("wood").HasComment("地圖主題（wood / carpet / dark）");
+            entity.Property(value => value.CreatedAt).HasComment("建立時間戳記（UTC）");
+            entity.Property(value => value.UpdatedAt).HasComment("最後更新時間戳記（UTC）");
+            entity.HasIndex(value => new { value.CompanyId, value.DepartmentId }).IsUnique();
+            entity.HasOne<Company>().WithMany().HasForeignKey(value => value.CompanyId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<Department>().WithMany().HasForeignKey(value => value.DepartmentId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<OfficeProfile>(entity =>
+        {
+            entity.ToTable("office_profiles", table =>
+            {
+                table.HasComment("成員虛擬辦公室個人設定檔");
+                table.HasCheckConstraint("CK_office_profiles_Status", "Status IN ('available', 'busy', 'meeting', 'break', 'away')");
+            });
+            entity.HasKey(value => value.Id);
+            entity.Property(value => value.Id).HasComment("個人設定唯一識別碼");
+            entity.Property(value => value.CompanyId).HasComment("所屬公司識別碼");
+            entity.Property(value => value.MembershipId).HasComment("所屬成員身分識別碼");
+            entity.Property(value => value.AvatarKey).HasMaxLength(20).HasComment("角色外觀鍵；NULL 表示依使用者雜湊的預設角色");
+            entity.Property(value => value.Status).HasMaxLength(20).IsRequired().HasDefaultValue("available").HasComment("手動狀態（available / busy / meeting / break / away）");
+            entity.Property(value => value.StatusText).HasMaxLength(40).HasComment("自訂狀態文字");
+            entity.Property(value => value.LastSeenAt).HasComment("最後在線時間（UTC）");
+            entity.Property(value => value.UpdatedAt).HasComment("最後更新時間戳記（UTC）");
+            entity.HasIndex(value => value.MembershipId).IsUnique();
+            entity.HasIndex(value => value.CompanyId);
+            entity.HasOne<Company>().WithMany().HasForeignKey(value => value.CompanyId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<CompanyMembership>().WithMany().HasForeignKey(value => value.MembershipId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 
