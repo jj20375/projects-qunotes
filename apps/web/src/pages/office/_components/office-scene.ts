@@ -7,6 +7,7 @@
 import Phaser from 'phaser';
 import type { Facing, OfficeMap, OfficeOccupant, OfficeSnapshot } from '@/shared/services/office-service';
 import { ensureTextures, TILE } from './office-textures';
+import { KENNEY_SHEETS, OFFICE_TILE_FRAMES } from './office-tiles';
 import { facingTo, findPath, isWalkable, zoneAt, type Point } from './office-grid';
 
 const STEP_MS = 140;
@@ -63,12 +64,24 @@ export class OfficeScene extends Phaser.Scene {
   private lastActiveAt = performance.now();
   private sleeping = false;
   private keys: Record<string, Phaser.Input.Keyboard.Key> = {};
+  private assetsFailed = false;
 
-  constructor(private readonly handlers: OfficeSceneHandlers, private readonly onReady: (scene: OfficeScene) => void) {
+  constructor(
+    private readonly handlers: OfficeSceneHandlers,
+    private readonly onReady: (scene: OfficeScene) => void,
+    private readonly onAssetsFailed: () => void = () => {},
+  ) {
     super('office');
   }
 
+  preload(): void {
+    // 素材壞了不能讓整個辦公室打不開：標記失敗後 tile() 會全部改用程式繪製的貼圖。
+    this.load.on('loaderror', () => { this.assetsFailed = true; });
+    for (const sheet of Object.values(KENNEY_SHEETS)) this.load.spritesheet(sheet.key, sheet.url, { frameWidth: TILE, frameHeight: TILE, spacing: 1 });
+  }
+
   create(): void {
+    if (this.assetsFailed) this.onAssetsFailed();
     // 不攔截按鍵（enableCapture=false），聊天輸入框才能正常打字；打字時 update 會忽略方向鍵。
     this.keys = this.input.keyboard!.addKeys({ up: 'UP', down: 'DOWN', left: 'LEFT', right: 'RIGHT', w: 'W', s: 'S', a: 'A', d: 'D' }, false) as Record<string, Phaser.Input.Keyboard.Key>;
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
@@ -100,10 +113,10 @@ export class OfficeScene extends Phaser.Scene {
     for (let y = 0; y < map.height; y++) {
       for (let x = 0; x < map.width; x++) {
         const key = map.grid[y][x] === '#' ? `wall-${map.theme}` : `floor-${map.theme}-${zoneAt(map, x, y)?.type ?? 'desk'}`;
-        layer.add(this.add.image(x * TILE, y * TILE, key).setOrigin(0));
+        layer.add(this.tile(x * TILE, y * TILE, key));
       }
     }
-    for (const item of map.furniture) layer.add(this.add.image(item.x * TILE, item.y * TILE, `furniture-${item.kind}`).setOrigin(0));
+    for (const item of map.furniture) layer.add(this.tile(item.x * TILE, item.y * TILE, `furniture-${item.kind}`));
     // 座位主人不在場時，空椅子上淡淡顯示名字。
     for (const seat of map.seats) {
       const label = this.add.text((seat.x + 0.5) * TILE, (seat.y + 0.5) * TILE, seat.name, SEAT_STYLE).setOrigin(0.5).setAlpha(0.6);
@@ -282,6 +295,12 @@ export class OfficeScene extends Phaser.Scene {
     }
   }
 
+  // 有對照 frame 且素材載入成功就用 Kenney 圖塊，否則用程式繪製的貼圖（ensureTextures 已先登錄）。
+  private tile(x: number, y: number, key: string): Phaser.GameObjects.Image {
+    const frame = this.assetsFailed ? undefined : OFFICE_TILE_FRAMES[key];
+    return frame === undefined ? this.add.image(x, y, key).setOrigin(0) : this.add.image(x, y, KENNEY_SHEETS.indoor.key, frame).setOrigin(0);
+  }
+
   private pressedDirection(): Facing | null {
     const keys = this.keys;
     if (keys.up?.isDown || keys.w?.isDown) return 'up';
@@ -303,9 +322,10 @@ export class OfficeScene extends Phaser.Scene {
  * 建立 Phaser 遊戲並等場景 create 完成；呼叫端以動態 import 載入此模組，Phaser 只在 /office 下載。
  * @param parent 放 canvas 的容器元素，遊戲尺寸會跟著它縮放。
  * @param handlers 場景對外層的回呼。
+ * @param onAssetsFailed 素材（Kenney spritesheet）載入失敗時呼叫一次，讓外層提示使用者已改用簡易圖案。
  * @returns 場景 create 完成後 resolve，附上 game（離開頁面時 destroy）與 scene。
  */
-export function createOfficeGame(parent: HTMLElement, handlers: OfficeSceneHandlers): Promise<{ game: Phaser.Game; scene: OfficeScene }> {
+export function createOfficeGame(parent: HTMLElement, handlers: OfficeSceneHandlers, onAssetsFailed?: () => void): Promise<{ game: Phaser.Game; scene: OfficeScene }> {
   return new Promise((resolve) => {
     const game: Phaser.Game = new Phaser.Game({
       type: Phaser.AUTO,
@@ -316,7 +336,7 @@ export function createOfficeGame(parent: HTMLElement, handlers: OfficeSceneHandl
       audio: { noAudio: true },
       fps: { target: 30, limit: 30 },
       scale: { mode: Phaser.Scale.RESIZE, width: parent.clientWidth, height: parent.clientHeight },
-      scene: new OfficeScene(handlers, (scene) => resolve({ game, scene })),
+      scene: new OfficeScene(handlers, (scene) => resolve({ game, scene }), onAssetsFailed),
     });
   });
 }

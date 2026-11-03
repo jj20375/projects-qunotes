@@ -98,7 +98,7 @@ onMounted(async () => {
   rooms.value = await listOfficeRoomsApi();
   const wanted = params.get('dept') ?? me.value!.scope.departmentId ?? rooms.value[0]?.departmentId;
   const { createOfficeGame } = await import('./office-scene');
-  const created = await createOfficeGame(canvasHost.value!, { step: onStep });
+  const created = await createOfficeGame(canvasHost.value!, { step: onStep }, () => message.warning('部分素材載入失敗，已改用簡易圖案。'));
   scene = created.scene;
   game = created.game;
   subscriptions.forEach(([name, handler]) => hub.on(name, handler));
