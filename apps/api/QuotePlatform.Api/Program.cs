@@ -120,6 +120,10 @@ builder.Services.AddScoped<AttachmentService>();
 builder.Services.AddScoped<ProjectDocumentService>();
 builder.Services.AddScoped<ShipmentService>();
 builder.Services.AddScoped<DashboardService>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<PresenceTracker>();
+builder.Services.AddSingleton<RateGate>();
+builder.Services.AddScoped<OfficeService>();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
