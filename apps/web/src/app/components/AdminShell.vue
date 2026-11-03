@@ -19,6 +19,7 @@ import { getMeApi, getMenuApi, listScopesApi, logoutApi, SCOPE_PAGE_SIZE, select
 import type { Me, MenuNode, ScopeOption } from '@/shared/types/auth';
 import { DATA_SCOPE_LABELS, meetsRequirement } from '@/shared/types/permissions';
 import { ME_KEY } from '@/app/composables/use-me';
+import { startPresence } from '@/app/composables/use-presence';
 
 dayjs.locale('zh-tw');
 
@@ -70,6 +71,8 @@ onMounted(async () => {
   scopeHasMore = scopeOffset >= SCOPE_PAGE_SIZE;
   canSwitchScope.value = scopeResult.length > 1;
   forbidden.value = (route.scope !== undefined && route.scope !== meResult.scope.kind) || (route.requirement !== undefined && !meetsRequirement(meResult.grants, route.requirement));
+  // 上線狀態與敲門通知在後台任何頁面都要有；權限不足時 startPresence 自己會略過。
+  void startPresence(meResult);
 });
 
 /** 公司很多時輸入名稱搜尋，由後端過濾（GET /api/auth/scopes?keyword=）；往下捲到底再向後端要下一頁（offset）。 */
