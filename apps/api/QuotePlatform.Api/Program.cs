@@ -21,6 +21,7 @@ using QuotePlatform.Api.Modules.Clients;
 using QuotePlatform.Api.Modules.Dashboard;
 using QuotePlatform.Api.Modules.Files;
 using QuotePlatform.Api.Modules.Identity;
+using QuotePlatform.Api.Modules.Office;
 using QuotePlatform.Api.Modules.ProjectDocuments;
 using QuotePlatform.Api.Modules.Products;
 using QuotePlatform.Api.Modules.Projects;
@@ -46,6 +47,7 @@ if (args.SequenceEqual(["--self-test"]))
     QuoteTerms.AssertExamples();
     DocumentNumberPattern.AssertExamples();
     AiSettings.AssertExamples();
+    OfficeMapGenerator.AssertExamples();
     Console.WriteLine("self-test passed");
     return;
 }
