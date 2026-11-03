@@ -28,7 +28,18 @@
 7. 業務查詢使用 EF Core/LINQ；原生 SQL 僅限 migration、取號（`SELECT … FOR UPDATE`）與維運腳本。
 8. 檔案本體放 MinIO，資料庫只存 metadata 與關聯；下載前必須先經 API 做資料範圍驗證再簽發 token。
 9. 帳號停用、角色權限、個人權限、membership 或密碼異動時，必須遞增 `users.AuthVersion`，並寫入 `audit_logs`。
-10. 所有程式碼註解、錯誤文案、規格與文件使用繁體中文；保留 API、類別、資料表與環境變數等技術名稱。
+10. **註解規範：區分「介面契約層（需完整文件化）」與「內部實作層（只寫為什麼）」，嚴禁每行機械補註解。**
+    - 所有程式碼註解、錯誤文案、規格與文件一律使用繁體中文；保留 API、類別、資料表與環境變數等技術名稱。
+    - **介面與契約層（必須完整文件化）**：
+      - **後端 C#**：所有公開 Controller/Endpoints、核心 Service 介面、Contracts DTO、Domain Entity 與列舉（Enum）必須撰寫標準 XML Doc（`/// <summary>`、`<param>`、`<returns>`），列舉常數必須逐行排列並註明項目意圖。這直接供 Swagger/OpenAPI 生成說明文件及 IDE IntelliSense 提示。
+      - **前端 TS/Vue**：所有公開 API Service 函式（以 `Api` 結尾命名）、共用工具函式與重要 Type 定義必須加上 JSDoc（`/** ... */`），包含 `@param`、`@returns` 與說明。重要檔案頂部建議以 `@file` 說明職責與業務背景。
+      - **資料庫**：MariaDB DDL migration 中的所有資料表（`COMMENT='...'`）與欄位（`COMMENT '...'`）均須提供清晰繁體中文業務說明，確保 DB 管理工具檢視時具自解釋性。
+    - **內部實作層（只寫「為什麼」，不寫「做什麼」）**：
+      - 方法內部、區域變數、迴圈與運算邏輯嚴禁每行機械補註解（例如禁止 `// 設定計數為 0`、`// 取得專案` 等機械式翻譯）。
+      - 只在**隱藏限制**（如資料範圍階層、取號 `FOR UPDATE` 並行鎖）、**不明顯的業務決策**（如改版凍結舊版快照、四捨五入尾差處理）、**繞過某個 bug 的 workaround**、**會讓人意外的行為**（如 EF Core 查詢攔截器、JWT claim 自訂對映）時才寫註解。
+      - 「如果拿掉這行註解不會讓後面的人看不懂，就不要寫。」
+    - **語法安全鐵律（防範 `*/` 編譯崩潰）**：
+      - 前端 Vue SFC 或 JS/TS 多行區塊註解（`/* ... */`）內，**嚴禁出現 `*/` 或含 `*/` 的 pattern**（例如 glob 或正規表達式，會提早閉合註解導致 Vite/Rollup `Unexpected token` 建置失敗）。一般邏輯註解優先推薦使用單行註解 `//`。
 11. 使用 Conventional Commits；commit subject 使用繁體中文且保持單一目的。
 12. 單一程式碼檔案原則上不超過 1000 行。
 13. **列表的搜尋、篩選、排序、分頁一律由後端 API 處理**：前端只把條件以 query 參數送出，由後端在資料庫查詢（EF Core/LINQ），回傳 `{ total, page, pageSize, items }`；前端不可拿到整批資料後再用 JS 過濾、排序或切頁。表格欄位排序用 `sorter: true` 並把 `sort`／`desc` 送給 API，狀態頁籤、下拉選單的搜尋（客戶、人員、專案、公司）也一樣走 API（`filter-option` 設為 false 搭配遠端查詢）。例外只有：已完整載入的小型樹狀結構（部門樹）的顯示組裝、使用者剛上傳檔案的匯入預覽，以及純顯示用的分組。新增列表 API 時使用 `Modules/Common/ListQuery`，並在 smoke 測試中驗證關鍵字、分頁與 `total`。`DataTable` 的 `manualSorting`／`manualPagination` 已固定開啟，表格只回報 `change` 事件，由頁面帶著新條件重新呼叫 API。
