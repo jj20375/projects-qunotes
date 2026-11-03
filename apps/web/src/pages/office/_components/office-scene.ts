@@ -7,6 +7,7 @@
 import Phaser from 'phaser';
 import type { Facing, OfficeMap, OfficeOccupant, OfficeSnapshot } from '@/shared/services/office-service';
 import { ensureTextures, TILE } from './office-textures';
+import { composeKenneyAvatars } from './office-avatars';
 import { KENNEY_SHEETS, OFFICE_TILE_FRAMES } from './office-tiles';
 import { facingTo, findPath, isWalkable, zoneAt, type Point } from './office-grid';
 
@@ -64,7 +65,7 @@ export class OfficeScene extends Phaser.Scene {
   private lastActiveAt = performance.now();
   private sleeping = false;
   private keys: Record<string, Phaser.Input.Keyboard.Key> = {};
-  private assetsFailed = false;
+  private readonly failedSheets = new Set<string>();
 
   constructor(
     private readonly handlers: OfficeSceneHandlers,
@@ -75,13 +76,15 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   preload(): void {
-    // 素材壞了不能讓整個辦公室打不開：標記失敗後 tile() 會全部改用程式繪製的貼圖。
-    this.load.on('loaderror', () => { this.assetsFailed = true; });
+    // 素材壞了不能讓整個辦公室打不開：記下失敗的 sheet，對應的圖塊或角色改用程式繪製的貼圖。
+    this.load.on('loaderror', (file: Phaser.Loader.File) => { this.failedSheets.add(file.key); });
     for (const sheet of Object.values(KENNEY_SHEETS)) this.load.spritesheet(sheet.key, sheet.url, { frameWidth: TILE, frameHeight: TILE, spacing: 1 });
   }
 
   create(): void {
-    if (this.assetsFailed) this.onAssetsFailed();
+    if (this.failedSheets.size > 0) this.onAssetsFailed();
+    // 要在 ensureTextures 之前登錄，同名的程式繪製角色才會被略過。
+    if (!this.failedSheets.has(KENNEY_SHEETS.characters.key)) composeKenneyAvatars(this);
     // 不攔截按鍵（enableCapture=false），聊天輸入框才能正常打字；打字時 update 會忽略方向鍵。
     this.keys = this.input.keyboard!.addKeys({ up: 'UP', down: 'DOWN', left: 'LEFT', right: 'RIGHT', w: 'W', s: 'S', a: 'A', d: 'D' }, false) as Record<string, Phaser.Input.Keyboard.Key>;
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
@@ -297,7 +300,7 @@ export class OfficeScene extends Phaser.Scene {
 
   // 有對照 frame 且素材載入成功就用 Kenney 圖塊，否則用程式繪製的貼圖（ensureTextures 已先登錄）。
   private tile(x: number, y: number, key: string): Phaser.GameObjects.Image {
-    const frame = this.assetsFailed ? undefined : OFFICE_TILE_FRAMES[key];
+    const frame = this.failedSheets.has(KENNEY_SHEETS.indoor.key) ? undefined : OFFICE_TILE_FRAMES[key];
     return frame === undefined ? this.add.image(x, y, key).setOrigin(0) : this.add.image(x, y, KENNEY_SHEETS.indoor.key, frame).setOrigin(0);
   }
 

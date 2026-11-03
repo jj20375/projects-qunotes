@@ -14,7 +14,7 @@ const PALETTES = {
   dark: { desk: 0x3a4048, meeting: 0x454c55, pantry: 0x525a63, entrance: 0x30353c, wall: 0x1c1f24 },
 } as const;
 
-/** 角色代號對應的衣服顏色，鍵名須與 OFFICE_AVATARS 一致。 */
+/** 角色代號對應的衣服顏色：角色選擇按鈕的顏色，也是程式繪製角色的衣服色；Kenney 角色的衣服色系依此調整（見 office-tiles.ts 的 OFFICE_AVATAR_RECOLOR）。鍵名須與 OFFICE_AVATARS 一致。 */
 export const AVATAR_COLORS: Record<string, number> = {
   a1: 0xe57373, a2: 0x64b5f6, a3: 0x81c784, a4: 0xffb74d,
   a5: 0xba68c8, a6: 0x4db6ac, a7: 0xf06292, a8: 0x90a4ae,
