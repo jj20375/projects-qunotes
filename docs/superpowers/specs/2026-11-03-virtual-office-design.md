@@ -48,7 +48,7 @@
 | `OfficeMapService` | 依部門成員產生地圖（見第 3 節），無副作用、可單元測試。 |
 | `OfficeController` | REST：辦公室列表與上線人數、取得地圖、上線狀態快照、讀寫自己的 `office_profiles`、管理員設定部門主題。 |
 | `OfficeAuthSweeper` | `BackgroundService`，每 60 秒以單次查詢（`WHERE Id IN (...)`）比對已連線使用者的 `AuthVersion`、帳號狀態與公司狀態，不一致者送出 `ForceDisconnect` 後斷線。 |
-| `PresenceSweeper` | 每 30 秒巡檢：最後操作超過 5 分鐘者改為閒置；斷線超過 15 秒寬限期者改為離線並寫入 `LastSeenAt`。可與 `OfficeAuthSweeper` 合併為同一個 `BackgroundService`。 |
+| `PresenceSweeper` | 每 5 秒巡檢（純記憶體運算）：最後操作超過 5 分鐘者改為閒置；斷線超過 15 秒寬限期者改為離線並寫入 `LastSeenAt`。與 `OfficeAuthSweeper` 合併為 `OfficeSweeper`；AuthVersion 巡檢間隔可由 `Quote__OfficeAuthSweepSeconds` 調整（預設 60）。 |
 
 長連線不會在每個請求重新驗證 JWT，因此 `OfficeAuthSweeper` 是「帳號停用、權限異動立即失效」原則在即時連線上的實作。
 
@@ -56,7 +56,7 @@
 
 兩張表皆實作 `ICompanyOwned`，由 Global Query Filter 過濾、`SaveChanges` 攔截器填入 `CompanyId`。
 
-**`office_rooms`**（一個部門一筆，第一次有人進入時建立）
+**`office_rooms`**（一個部門一筆，管理員第一次設定主題時建立；沒有資料列時主題視為 `wood`）
 
 | 欄位 | 說明 |
 |---|---|
@@ -96,7 +96,7 @@
 
 ### 2.4 權限
 
-新增權限碼 `office.view`，預設所有角色開啟；無此權限者看不到選單，hub 連線時亦拒絕。部門主題設定沿用部門管理的編輯權限（實作時對照 `PermissionCatalog.cs` 的既有權限碼）。依 `AGENTS.md` 同步更新：
+新增權限碼 `office`（只用 read），選單路徑 `/office`；無此權限者看不到選單，hub 連線時亦拒絕。既有角色由 Seeder 在 `office` 第一次寫入權限目錄時補上 read，同時遞增相關使用者的 `AuthVersion` 並寫 audit；正式環境部署此版本時必須執行一次 Seeder（`--seed-only` 或 `BOOTSTRAP_ON_START=true`）。部門主題設定沿用部門管理的編輯權限（實作時對照 `PermissionCatalog.cs` 的既有權限碼）。依 `AGENTS.md` 同步更新：
 
 - `Infrastructure/PermissionCatalog.cs`
 - `src/shared/types/permissions.ts` 的 `PermissionCode`
@@ -129,7 +129,7 @@
 ```
 
 - 圖塊尺寸 16px，前端依畫面放大整數倍顯示。
-- 每人一張專屬座位，桌上顯示名牌；不在線時座位空著。
+- 每人一張專屬座位；座位主人不在場時，空椅子上淡淡顯示名字。
 - 人數不設上限，地圖大於畫面時鏡頭跟隨自己的角色。
 - 部門無成員時仍產生含入口、會議室、茶水間的空辦公室。
 
@@ -137,14 +137,16 @@
 
 ```json
 {
-  "width": 40, "height": 24, "tileSize": 16, "theme": "wood",
-  "layers": { "floor": [], "walls": [], "furniture": [] },
-  "collision": [],
-  "zones": [{ "id": "meeting-1", "type": "meeting", "rect": { "x": 0, "y": 0, "w": 8, "h": 6 } }],
-  "seats": [{ "membershipId": "…", "x": 12, "y": 10, "facing": "up" }],
-  "spawn": { "x": 2, "y": 20 }
+  "width": 17, "height": 15, "tileSize": 16, "theme": "wood",
+  "grid": ["#################", "#.....#........#", "…"],
+  "furniture": [{ "kind": "desk", "x": 7, "y": 10 }],
+  "zones": [{ "id": "meeting", "type": "meeting", "x": 8, "y": 1, "w": 8, "h": 6 }],
+  "seats": [{ "membershipId": "…", "name": "王小明", "x": 7, "y": 9, "facing": "down", "lastSeenAt": null }],
+  "spawn": { "x": 3, "y": 12 }
 }
 ```
+
+`grid` 每列一個字串：`#` 牆、`.` 可走、`f` 家具（不可走）。
 
 `zones[].type` 為 `desk`／`meeting`／`pantry`／`entrance`。後端以同一份地圖驗證移動與計算聊天收訊對象。
 
@@ -164,11 +166,12 @@
 | `LeaveOffice()` | 離開目前辦公室群組。 |
 | `Move(x, y, facing)` | 必須為相鄰格、可通行；每連線每秒最多 10 次。通過則廣播 `Moved`，否則回 `PositionCorrected`。 |
 | `GoToSeat()` | 後端將角色放到自己的座位（座位被占則放到最近空格）。 |
+| `SetAvatar(avatarKey)` | 寫入 `office_profiles` 並廣播 `AvatarChanged`。 |
 | `SetStatus(status, text?)` | `status` 必須在五種之內，`text` 最多 40 字；寫入 `office_profiles`，廣播給公司群組。 |
 | `Emote(key)` | `key` 必須在固定清單（👋 ☕ 👍 🎉 ❓）；每秒最多 1 次；廣播給辦公室群組，前端顯示 3 秒。 |
 | `SendChat(text)` | 最多 500 字、每秒最多 2 則；收訊對象由後端計算（見 4.3）。 |
-| `Knock(targetMembershipId, message?)` | 對象須同公司且在線；同一對象 30 秒內限一次；送到對方所有連線。 |
-| `AnswerKnock(fromMembershipId, accept, message?)` | 接受時後端將回應者放到敲門者旁的空格；拒絕時回傳附言。 |
+| `Knock(targetMembershipId, message?)` | 敲門者須已在辦公室內；對象不存在、不同公司、離線一律回「找不到此成員或對方不在線上。」；同一對象 30 秒內限一次；送到對方所有連線。 |
+| `AnswerKnock(fromMembershipId, accept, message?)` | 必須對應 5 分鐘內的敲門，否則回「沒有待回應的敲門，可能已經逾時。」；接受時後端將回應者放到敲門者旁的空格；拒絕時回傳附言。 |
 | `Activity()` | 前端偵測到操作時最多每 60 秒送一次，更新最後操作時間。 |
 
 前端走動方式：方向鍵／WASD 一次一格；點擊地圖任一格時在 `collision` 上以 BFS 找路，逐步送出 `Move`。
@@ -181,8 +184,8 @@
 |---|---|
 | 辦公室群組 | `OccupantJoined`、`OccupantLeft`、`Moved`、`Emoted` |
 | 計算出的收訊者 | `ChatReceived` |
-| 公司群組 | `PresenceChanged`、`StatusChanged` |
-| 個人 | `PositionCorrected`、`Knocked`、`KnockAnswered`、`ForceDisconnect`、`OperationRejected` |
+| 公司群組 | `PresenceChanged`（狀態變更併入此事件）、`AvatarChanged` |
+| 個人 | `PositionCorrected`、`Knocked`、`KnockAnswered`、`ForceDisconnect`、`OfficeSessionReplaced`（同一人在另一個分頁進入辦公室時，舊分頁收到） |
 
 其他成員收到 `Moved` 時以 150ms 補間移動角色。
 
@@ -218,7 +221,7 @@
 - 15 秒寬限期避免重新整理或網路瞬斷造成狀態閃爍。
 - 轉為離線時寫入 `office_profiles.LastSeenAt`，離線者顯示「x 小時前在線」。
 - 同公司所有人皆可看到彼此的上線狀態；第一期不做隱身。
-- `GET /api/office/presence` 回傳公司內目前上線與閒置者（以 membershipId 為鍵的對照表，非列表 UI，不分頁），之後由 `PresenceChanged`／`StatusChanged` 增量更新。
+- `GET /api/office/presence` 回傳公司內目前上線與閒置者（以 membershipId 為鍵的對照表，非列表 UI，不分頁），之後由 `PresenceChanged` 增量更新。
 
 ## 6. 錯誤處理
 
@@ -233,7 +236,7 @@
 
 - 移動不合法：回 `PositionCorrected`，前端靜默拉回。
 - 超過頻率：丟棄多餘訊息；同一連線 10 秒內被擋 50 次即斷開。
-- 聊天、敲門失敗以 `OperationRejected` 回傳繁體中文原因（例如「對方已離線」「請稍候 30 秒再敲門」「訊息超過 500 字」），前端顯示輕量提示。
+- 聊天、敲門失敗以 `HubException` 回傳繁體中文原因，前端取出訊息顯示（例如「對方已離線」「請稍候 30 秒再敲門」「訊息超過 500 字」），前端顯示輕量提示。
 - 對象不屬於同公司時一律回「找不到此成員」，不透露其他公司資料。
 
 ### 6.3 地圖與素材
@@ -265,7 +268,7 @@
 - 聊天只送達附近或同區塊的人。
 - 敲門送達對方所有連線，接受後位置正確。
 - 帳號停用後 60 秒內連線被斷開。
-- 無 `office.view` 權限者無法連線。
+- 無 `office:read` 權限者無法連線。
 
 涉及授權，另跑既有的 `npm run test:smoke`。
 
@@ -274,4 +277,4 @@
 - 前端：`npm run check:web`、`npm run build:web`；以內建瀏覽器開兩個分頁、登入不同帳號，實際確認走動、聊天、敲門與上線符號。
 - API：`npm run build:api` 0 警告。
 - Schema：產生 migration，同步更新 `docs/database-planning.md`、`docs/database-schema.sql`，以空資料庫與既有資料庫各驗證一次。
-- 文件：`docs/system-architecture.md` 補上即時連線層，`docs/permissions-and-data-scope.md` 加入 `office.view`。
+- 文件：`docs/system-architecture.md` 補上即時連線層，`docs/permissions-and-data-scope.md` 加入 `office`。

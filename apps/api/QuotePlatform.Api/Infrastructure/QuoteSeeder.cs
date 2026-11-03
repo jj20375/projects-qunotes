@@ -10,18 +10,20 @@ namespace QuotePlatform.Api.Infrastructure;
 /// <remarks>
 /// 與美達特不同，admin 密碼只在帳號不存在時設定，之後重跑 Seeder 不會把密碼改回預設值。
 /// </remarks>
-public sealed class QuoteSeeder(QuoteDbContext db, CompanyProvisioner provisioner, CompanyContext companyContext, IOptions<QuoteOptions> options, ILogger<QuoteSeeder> logger)
+public sealed class QuoteSeeder(QuoteDbContext db, CompanyProvisioner provisioner, CompanyContext companyContext, AuditService audit, IOptions<QuoteOptions> options, ILogger<QuoteSeeder> logger)
 {
     public async Task SeedAsync(CancellationToken cancellationToken)
     {
-        await SeedPermissionsAsync(cancellationToken);
+        var createdCodes = await SeedPermissionsAsync(cancellationToken);
         await SeedSystemRolesAsync(cancellationToken);
+        await GrantNewPermissionDefaultsAsync(createdCodes, cancellationToken);
         await SeedAdminAsync(cancellationToken);
         if (options.Value.SeedDemoData) await SeedDemoCompanyAsync(cancellationToken);
     }
 
-    private async Task SeedPermissionsAsync(CancellationToken cancellationToken)
+    private async Task<IReadOnlySet<string>> SeedPermissionsAsync(CancellationToken cancellationToken)
     {
+        var created = new HashSet<string>(StringComparer.Ordinal);
         var existing = await db.Permissions.ToDictionaryAsync(value => value.Code, StringComparer.Ordinal, cancellationToken);
         // 先建立全部節點再補 ParentId，避免定義順序影響外鍵。
         foreach (var (definition, index) in PermissionCatalog.Definitions.Select((value, index) => (value, index)))
@@ -29,6 +31,7 @@ public sealed class QuoteSeeder(QuoteDbContext db, CompanyProvisioner provisione
             if (!existing.TryGetValue(definition.Code, out var permission))
             {
                 permission = new Permission { Code = definition.Code };
+                created.Add(definition.Code);
                 db.Permissions.Add(permission);
                 existing[definition.Code] = permission;
             }
@@ -46,6 +49,7 @@ public sealed class QuoteSeeder(QuoteDbContext db, CompanyProvisioner provisione
             existing[definition.Code].ParentId = definition.Parent is null ? null : existing[definition.Parent].Id;
         }
         await db.SaveChangesAsync(cancellationToken);
+        return created;
     }
 
     private async Task SeedSystemRolesAsync(CancellationToken cancellationToken)
@@ -84,6 +88,37 @@ public sealed class QuoteSeeder(QuoteDbContext db, CompanyProvisioner provisione
             }
         }
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>權限第一次寫入目錄時，替既有公司角色預設開放 read 的功能。</summary>
+    private static readonly string[] ReadByDefaultForExistingRoles = ["office"];
+
+    /// <summary>
+    /// 新功能第一次出現在權限目錄時，替既有的公司角色補上 read；之後管理員收回也不會再被補回。
+    /// </summary>
+    /// <remarks>
+    /// 完整存取角色由 <see cref="SeedSystemRolesAsync"/> 同步；這裡只處理其他公司角色（系統與自訂）。
+    /// 依權限異動規則遞增相關使用者的 AuthVersion 並寫 audit，使用者下次換發 token 即取得新權限。
+    /// Seeder 沒有公司範圍，查 membership 必須 IgnoreQueryFilters。
+    /// </remarks>
+    private async Task GrantNewPermissionDefaultsAsync(IReadOnlySet<string> createdCodes, CancellationToken cancellationToken)
+    {
+        foreach (var code in ReadByDefaultForExistingRoles.Where(createdCodes.Contains))
+        {
+            var permissionId = await db.Permissions.Where(value => value.Code == code).Select(value => value.Id).SingleAsync(cancellationToken);
+            var roleIds = await db.Roles
+                .Where(role => role.Scope == "company" && !role.IsFullAccess && !db.RolePermissions.Any(value => value.RoleId == role.Id && value.PermissionId == permissionId))
+                .Select(role => role.Id)
+                .ToListAsync(cancellationToken);
+            if (roleIds.Count == 0) continue;
+            db.RolePermissions.AddRange(roleIds.Select(roleId => new RolePermission { RoleId = roleId, PermissionId = permissionId, PerRead = true, OptionsJson = "[]" }));
+            var userIds = db.CompanyMemberships.IgnoreQueryFilters().Where(value => roleIds.Contains(value.RoleId)).Select(value => value.UserId);
+            await db.Users.Where(user => userIds.Contains(user.Id))
+                .ExecuteUpdateAsync(setters => setters.SetProperty(user => user.AuthVersion, user => user.AuthVersion + 1), cancellationToken);
+            audit.Add(null, null, "permission", permissionId, "permission.default_granted", after: new { code, roleIds });
+            await db.SaveChangesAsync(cancellationToken);
+            logger.LogInformation("已替 {Count} 個既有角色開放 {Code}:read。", roleIds.Count, code);
+        }
     }
 
     private async Task SeedAdminAsync(CancellationToken cancellationToken)

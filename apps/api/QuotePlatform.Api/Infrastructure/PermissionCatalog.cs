@@ -36,6 +36,7 @@ public static class PermissionCatalog
         new("platform.permissions", "權限目錄", "platform", "platform.system_manager", "/platform/permissions", []),
 
         new("dashboard", "戰情 Dashboard", "company", null, "/", [("view_amount", "檢視金額"), ("view_all_staff", "檢視全員排行")]),
+        new("office", "虛擬辦公室", "company", null, "/office", []),
 
         new("business", "業務管理", "company", null, null, []),
         new("clients", "客戶", "company", "business", "/clients", [("import", "匯入"), ("export", "匯出")]),
@@ -76,6 +77,7 @@ public static class PermissionCatalog
         new("sales-manager", "業務主管", "company", DataScopes.DepartmentTree, false,
         [
             Allow("dashboard", "R", "view_amount", "view_all_staff"),
+            Allow("office", "R"),
             Allow("clients", "CRUD", "import", "export"),
             Allow("products", "R"),
             Allow("projects", "CRUD", "assign_member", "close", "export"),
@@ -88,6 +90,7 @@ public static class PermissionCatalog
         new("sales", "業務", "company", DataScopes.Own, false,
         [
             Allow("dashboard", "R", "view_amount"),
+            Allow("office", "R"),
             Allow("clients", "CRU"),
             Allow("products", "R"),
             Allow("projects", "CRU", "assign_member"),
@@ -99,6 +102,7 @@ public static class PermissionCatalog
         new("accountant", "會計", "company", DataScopes.Company, false,
         [
             Allow("dashboard", "R", "view_amount", "view_all_staff"),
+            Allow("office", "R"),
             Allow("clients", "R"),
             Allow("projects", "R"),
             Allow("quotes", "R", "export_pdf", "view_cost"),
@@ -107,7 +111,7 @@ public static class PermissionCatalog
             Allow("invoices", "CRUD", "download", "mark_paid", "void"),
         ]),
         new("viewer", "唯讀", "company", DataScopes.Own, false,
-            new[] { "dashboard", "clients", "products", "projects", "quotes", "orders", "warranties", "invoices" }.Select(code => Allow(code, "R")).ToArray()),
+            new[] { "dashboard", "office", "clients", "products", "projects", "quotes", "orders", "warranties", "invoices" }.Select(code => Allow(code, "R")).ToArray()),
     ];
 
     /// <summary>供 <c>--self-test</c> 驗證目錄與角色定義的一致性。</summary>

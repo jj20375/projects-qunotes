@@ -87,8 +87,11 @@
 | company | `warranties` | `/projects/:id/warranties` | `download`：下載附件 |
 | company | `invoices` | `/projects/:id/invoices` | `download`：下載附件、`mark_paid`：登記收款、`void`：作廢 |
 | company | `dashboard` | `/` | `view_amount`：檢視金額、`view_all_staff`：檢視全員排行 |
+| company | `office` | `/office` | — |
 
 `/` Dashboard 不要求權限即可進入，但沒有 `dashboard:read` 時只顯示歡迎頁。
+
+`/office` 虛擬辦公室只用 `office:read`：同公司成員都能進入任何部門的辦公室，不套資料範圍（辦公室不含業務資料）；hub 連線時亦檢查此權限。既有角色由 Seeder 在 `office` 第一次寫入目錄時補上 read，並遞增相關使用者的 `AuthVersion`。
 
 ### 3.3 內建角色
 
