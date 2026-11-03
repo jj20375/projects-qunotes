@@ -41,11 +41,15 @@ interface AvatarView {
 const toPixel = (point: Point) => ({ x: (point.x + 0.5) * TILE, y: (point.y + 1) * TILE });
 const textureOf = (occupant: Pick<OfficeOccupant, 'avatarKey' | 'facing'>) => `avatar-${occupant.avatarKey}-${occupant.facing}`;
 
-// 聊天輸入框有焦點時方向鍵要留給輸入框，不能同時讓角色亂走。
-function isTyping(): boolean {
+// 可輸入文字的欄位：唯讀（antd Select 沒開搜尋時的輸入框）與停用的不算，否則選完下拉後方向鍵會失效。
+function focusedTextField(): HTMLElement | null {
   const element = document.activeElement;
-  return element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || (element instanceof HTMLElement && element.isContentEditable);
+  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) return element.readOnly || element.disabled ? null : element;
+  return element instanceof HTMLElement && element.isContentEditable ? element : null;
 }
+
+// 聊天輸入框有焦點時方向鍵要留給輸入框，不能同時讓角色亂走。
+const isTyping = () => focusedTextField() !== null;
 
 /** 辦公室場景：持有地圖與所有在場角色的畫面物件。 */
 export class OfficeScene extends Phaser.Scene {
@@ -67,7 +71,11 @@ export class OfficeScene extends Phaser.Scene {
   create(): void {
     // 不攔截按鍵（enableCapture=false），聊天輸入框才能正常打字；打字時 update 會忽略方向鍵。
     this.keys = this.input.keyboard!.addKeys({ up: 'UP', down: 'DOWN', left: 'LEFT', right: 'RIGHT', w: 'W', s: 'S', a: 'A', d: 'D' }, false) as Record<string, Phaser.Input.Keyboard.Key>;
-    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => this.walkTo({ x: Math.floor(pointer.worldX / TILE), y: Math.floor(pointer.worldY / TILE) }));
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      // Phaser 對 canvas 的 mousedown 會 preventDefault，焦點不會自己離開輸入框，得手動放開，方向鍵才會恢復。
+      focusedTextField()?.blur();
+      this.walkTo({ x: Math.floor(pointer.worldX / TILE), y: Math.floor(pointer.worldY / TILE) });
+    });
     this.scale.on('resize', () => this.fitCamera());
     this.onReady(this);
   }
