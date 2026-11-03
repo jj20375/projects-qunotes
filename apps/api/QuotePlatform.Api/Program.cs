@@ -199,7 +199,8 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
 app.MapControllers();
-app.MapHub<OfficeHub>(OfficeHub.Path);
+// 長連線不會重新驗證 JWT；token 過期（含登出後仍有效的舊 token）時由伺服器關閉連線，前端以 accessTokenFactory 帶新 token 重連。
+app.MapHub<OfficeHub>(OfficeHub.Path, options => options.CloseOnAuthenticationExpiration = true);
 
 // migration／Seeder 只看明確的 opt-in 旗標，不綁 ASPNETCORE_ENVIRONMENT（沿用美達特的教訓）。
 if (quoteOptions.MigrateOnStart || quoteOptions.BootstrapOnStart || seedOnly)
