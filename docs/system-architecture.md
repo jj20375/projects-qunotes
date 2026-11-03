@@ -52,7 +52,7 @@ flowchart LR
 | 元件 | 說明 |
 |---|---|
 | Nginx | 單一入口：`/` 後台靜態檔、`/api` → API、`/files` → file-server |
-| API | JWT 驗證、授權、業務邏輯、PDF／Excel 產生、Dashboard 聚合 |
+| API | JWT 驗證、授權、業務邏輯、PDF／Excel 產生、Dashboard 聚合。另提供 SignalR hub `/api/hubs/office`（虛擬辦公室），上線狀態只存在記憶體，限單一實例；多實例時需加 Redis backplane。 |
 | file-server | 沿用美達特 `media-server/src/token.mjs`、`upload-manifest.mjs`、`range.mjs` 的機制；API 簽發上傳／下載 token，file-server 只驗 token 不讀資料庫 |
 | MariaDB | **沿用美達特的共用 MariaDB**（`DB_MODE=shared`，見第 9 節）；本系統只用自己的資料庫 `quote_platform` 與帳號 `quote_app`，不碰任何 `metat_*` 庫 |
 | MinIO | 獨立 bucket `quote-files`、獨立 access key；物件 key：`{companyId}/{yyyy}/{MM}/{fileId}` |
@@ -215,6 +215,14 @@ flowchart LR
 - 先以一般版面產生；超過一頁時改用緊湊版面（字級 9、邊界與列距較小）重算，頁數較少才採用，讓剛好多出一點的報價收回一頁。
 - 分頁規則：明細列不跨頁拆開；分段標題至少帶著下一列；合計區不拆開；條款的標題與第一條在一起，每條以懸掛縮排排版；最後兩個區塊與簽章欄綁在一起，避免最後一頁只剩簽章。
 - 頁尾：單號、版次、第 x / y 頁。以 6–50 筆明細、12 條條款掃描驗證：12–13 筆一頁、40 筆兩頁，沒有拆開的列或只剩簽章的頁。
+
+### 6.8 部門虛擬辦公室
+
+- 規格：`docs/superpowers/specs/2026-11-03-virtual-office-design.md`。
+- `Modules/Office/`：`OfficeMapGenerator`（依部門成員產生地圖）、`OfficeRules`（移動、聊天範圍、頻率限制）、`PresenceTracker`（記憶體上線狀態）、`OfficeHub`（SignalR）、`OfficeSweeper`（每 5 秒處理閒置／離線，每 `Quote__OfficeAuthSweepSeconds` 秒比對 AuthVersion）。
+- hub 以 query `access_token` 驗證（僅此路徑），連線時要求 `office:read`；公司隔離靠群組 `company:{id}`、`office:{companyId}:{departmentId}`，資料庫存取前以 `CompanyContext.UseCompany` 指定連線身分的公司。
+- 走動、表情、聊天、上線狀態不寫資料庫；`office_rooms` 存主題、`office_profiles` 存角色、手動狀態與最後在線時間。
+- Nginx 的 `/api/hubs/` 需 WebSocket upgrade 並關閉 access log（token 在 query string）。
 
 ## 7. 主要 API
 

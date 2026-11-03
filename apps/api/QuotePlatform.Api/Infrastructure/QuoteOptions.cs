@@ -23,6 +23,8 @@ public sealed class QuoteOptions
     public string BootstrapAdminPassword { get; init; } = string.Empty;
     /// <summary>是否建立示範公司與帳號；僅限開發環境。</summary>
     public bool SeedDemoData { get; init; }
+    /// <summary>虛擬辦公室巡檢 AuthVersion 的間隔秒數（最少 5）；smoke 測試時調短以加快驗證。</summary>
+    public int OfficeAuthSweepSeconds { get; init; } = 60;
     /// <summary>簽發 file-server 上傳／下載 token 的金鑰，必須與 file-server 的 FILE_TOKEN_KEY 相同（至少 32 字元）。</summary>
     public string FileTokenKey { get; init; } = string.Empty;
     /// <summary>file-server 回呼 API 時帶的共享密鑰，對應 FILE_CALLBACK_SECRET。</summary>

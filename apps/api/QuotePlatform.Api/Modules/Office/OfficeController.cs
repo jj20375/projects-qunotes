@@ -5,7 +5,7 @@ namespace QuotePlatform.Api.Modules.Office;
 
 /// <summary>
 /// 虛擬辦公室 REST：部門辦公室列表、公司上線狀態快照與主題設定。
-/// 走動、聊天等即時互動走 <c>OfficeHub</c>。
+/// 走動、聊天等即時互動走 <see cref="OfficeHub"/>。
 /// </summary>
 [Route("api/office")]
 public sealed class OfficeController(OfficeService service, PresenceTracker tracker) : ScopedControllerBase
