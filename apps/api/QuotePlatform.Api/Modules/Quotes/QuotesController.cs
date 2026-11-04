@@ -230,5 +230,5 @@ public sealed class QuoteDocumentService(QuoteDbContext db, QuoteService quotes,
     }
 
     private static string FileStem(Quote quote) =>
-        $"報價單_{(quote.RevisionNo > 0 ? $"{quote.QuoteNo}-R${quote.RevisionNo}" : quote.QuoteNo)}_{string.Concat(quote.ClientName.Split(Path.GetInvalidFileNameChars()))}";
+        $"報價單_{(quote.RevisionNo > 0 ? $"{quote.QuoteNo}-R{quote.RevisionNo}" : quote.QuoteNo)}_{string.Concat(quote.ClientName.Split(Path.GetInvalidFileNameChars()))}";
 }
