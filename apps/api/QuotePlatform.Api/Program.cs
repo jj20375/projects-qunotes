@@ -50,6 +50,7 @@ if (args.SequenceEqual(["--self-test"]))
     OfficeMapGenerator.AssertExamples();
     OfficeRules.AssertExamples();
     PresenceTracker.AssertExamples();
+    QuoteSeeder.AssertExistingRoleDefaults();
     Console.WriteLine("self-test passed");
     return;
 }

@@ -87,14 +87,33 @@ public sealed class QuoteSeeder(QuoteDbContext db, CompanyProvisioner provisione
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    /// <summary>預設替既有公司角色開放 read 的功能。</summary>
-    private static readonly string[] ReadByDefaultForExistingRoles = ["office"];
+    /// <summary>新功能第一次出現時，要替既有公司角色補上預設授權的權限代碼；內容由 <see cref="DefaultForExistingRole"/> 決定。</summary>
+    private static readonly string[] NewPermissionDefaultCodes = ["office", "followups"];
 
-    /// <summary>已完成預設授權的持久標記（audit_logs 的 Action）；有這筆紀錄就不再處理該權限。</summary>
     private const string DefaultGrantedAction = "permission.default_granted";
 
     /// <summary>
-    /// 新功能第一次出現時，替既有的公司角色補上 read；之後管理員收回也不會再被補回。
+    /// 決定既有角色對新權限的預設授權。
+    /// </summary>
+    /// <param name="code">新權限代碼。</param>
+    /// <param name="roleCode">角色代碼。</param>
+    /// <param name="isSystem">是否為系統內建角色。</param>
+    /// <param name="projects">該角色目前對 <c>projects</c> 的授權；沒有則為 null。</param>
+    /// <returns>要補上的授權；null 表示不授權。</returns>
+    /// <remarks>
+    /// followups：系統角色依 <see cref="PermissionCatalog.SystemRoles"/>（會計沒有）；自訂角色比照它對專案的權限，
+    /// 因為跟進紀錄寫在專案上，能看、能改專案的自訂角色（例如部門管理者）通常也要能看、能寫紀錄。
+    /// </remarks>
+    internal static PermissionAllowance? DefaultForExistingRole(string code, string roleCode, bool isSystem, RolePermission? projects) => code switch
+    {
+        "office" => new PermissionAllowance("office", false, true, false, false, []),
+        "followups" when isSystem => PermissionCatalog.SystemRoles.SingleOrDefault(role => role.Code == roleCode)?.Permissions.SingleOrDefault(value => value.Code == "followups"),
+        "followups" => projects is { PerRead: true } ? new PermissionAllowance("followups", projects.PerCreate, true, projects.PerUpdate, projects.PerDelete, []) : null,
+        _ => throw new InvalidOperationException($"{code} 沒有定義既有角色的預設授權。"),
+    };
+
+    /// <summary>
+    /// 新功能第一次出現時，替既有的公司角色補上預設授權；之後管理員收回也不會再被補回。
     /// </summary>
     /// <remarks>
     /// 以 audit_logs 的 <c>permission.default_granted</c> 紀錄當一次性標記，而不是「這次執行才新建權限列」：
@@ -106,19 +125,40 @@ public sealed class QuoteSeeder(QuoteDbContext db, CompanyProvisioner provisione
     /// </remarks>
     private async Task GrantNewPermissionDefaultsAsync(CancellationToken cancellationToken)
     {
-        foreach (var code in ReadByDefaultForExistingRoles)
+        var projectsPermissionId = await db.Permissions.Where(value => value.Code == "projects").Select(value => value.Id).SingleAsync(cancellationToken);
+        foreach (var code in NewPermissionDefaultCodes)
         {
             var permissionId = await db.Permissions.Where(value => value.Code == code).Select(value => value.Id).SingleAsync(cancellationToken);
             if (await db.AuditLogs.AnyAsync(value => value.EntityType == "permission" && value.EntityId == permissionId && value.Action == DefaultGrantedAction, cancellationToken)) continue;
 
             await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-            var roleIds = await db.Roles
+            var roles = await db.Roles
                 .Where(role => role.Scope == "company" && !role.IsFullAccess && !db.RolePermissions.Any(value => value.RoleId == role.Id && value.PermissionId == permissionId))
-                .Select(role => role.Id)
+                .Select(role => new
+                {
+                    role.Id,
+                    role.Code,
+                    role.IsSystem,
+                    Projects = db.RolePermissions.FirstOrDefault(value => value.RoleId == role.Id && value.PermissionId == projectsPermissionId),
+                })
                 .ToListAsync(cancellationToken);
-            if (roleIds.Count > 0)
+            var grants = roles
+                .Select(role => (role.Id, Allowance: DefaultForExistingRole(code, role.Code, role.IsSystem, role.Projects)))
+                .Where(value => value.Allowance is not null)
+                .ToList();
+            var roleIds = grants.Select(value => value.Id).ToList();
+            if (grants.Count > 0)
             {
-                db.RolePermissions.AddRange(roleIds.Select(roleId => new RolePermission { RoleId = roleId, PermissionId = permissionId, PerRead = true, OptionsJson = "[]" }));
+                db.RolePermissions.AddRange(grants.Select(value => new RolePermission
+                {
+                    RoleId = value.Id,
+                    PermissionId = permissionId,
+                    PerCreate = value.Allowance!.PerCreate,
+                    PerRead = value.Allowance.PerRead,
+                    PerUpdate = value.Allowance.PerUpdate,
+                    PerDelete = value.Allowance.PerDelete,
+                    OptionsJson = "[]",
+                }));
                 await db.SaveChangesAsync(cancellationToken);
                 var userIds = db.CompanyMemberships.IgnoreQueryFilters().Where(value => roleIds.Contains(value.RoleId)).Select(value => value.UserId);
                 await db.Users.Where(user => userIds.Contains(user.Id))
@@ -127,8 +167,28 @@ public sealed class QuoteSeeder(QuoteDbContext db, CompanyProvisioner provisione
             audit.Add(null, null, "permission", permissionId, DefaultGrantedAction, after: new { code, roleIds });
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            logger.LogInformation("已記錄 {Code}:read 的預設授權，替 {Count} 個既有角色開放。", code, roleIds.Count);
+            logger.LogInformation("已記錄 {Code} 的預設授權，替 {Count} 個既有角色開放。", code, roleIds.Count);
         }
+    }
+
+    /// <summary>供 <c>--self-test</c> 驗證既有角色對新權限的預設授權。</summary>
+    public static void AssertExistingRoleDefaults()
+    {
+        static void Check(bool condition, string message)
+        {
+            if (!condition) throw new InvalidOperationException($"既有角色預設授權：{message}");
+        }
+        static bool Is(PermissionAllowance? value, bool create, bool read, bool update, bool delete) =>
+            value is not null && value.PerCreate == create && value.PerRead == read && value.PerUpdate == update && value.PerDelete == delete;
+
+        Check(Is(DefaultForExistingRole("office", "sales", true, null), false, true, false, false), "office 一律只補 read");
+        Check(Is(DefaultForExistingRole("followups", "sales", true, null), true, true, true, true), "業務補 CRUD");
+        Check(Is(DefaultForExistingRole("followups", "sales-manager", true, null), true, true, true, true), "業務主管補 CRUD");
+        Check(Is(DefaultForExistingRole("followups", "viewer", true, null), false, true, false, false), "唯讀只補 read");
+        Check(DefaultForExistingRole("followups", "accountant", true, new RolePermission { PerRead = true }) is null, "會計不補");
+        Check(Is(DefaultForExistingRole("followups", "dept-manager", false, new RolePermission { PerCreate = true, PerRead = true, PerUpdate = true }), true, true, true, false), "自訂角色比照專案權限");
+        Check(DefaultForExistingRole("followups", "custom", false, null) is null, "沒有專案權限的自訂角色不補");
+        Check(DefaultForExistingRole("followups", "custom", false, new RolePermission { PerRead = false }) is null, "沒有 projects:read 的自訂角色不補");
     }
 
     private async Task SeedAdminAsync(CancellationToken cancellationToken)
