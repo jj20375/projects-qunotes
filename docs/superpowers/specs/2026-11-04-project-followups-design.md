@@ -1,7 +1,7 @@
 # 專案跟進紀錄設計
 
 - 日期：2026-11-04
-- 狀態：設計已確認，待實作（分支 `feat/project-followups`）
+- 狀態：已實作（分支 `feat/project-followups`）
 
 ## 1. 目標與範圍
 
