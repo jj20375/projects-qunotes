@@ -74,7 +74,9 @@
   | 會計 | 無 |
   | 唯讀 | 讀 |
 
-- 既有公司角色由 Seeder 一次性補上（沿用虛擬辦公室的 `permission.default_granted` 機制，`audit_logs` 記錄、同一交易），部署時必須執行一次 Seeder。之後管理員移除的權限不會被補回。
+- 既有公司角色由 Seeder 一次性補上（沿用虛擬辦公室的 `permission.default_granted` 機制，`audit_logs` 記錄、同一交易），部署時必須執行一次 Seeder。之後管理員移除的權限不會被補回。補給的內容：
+  - 系統角色（業務主管、業務、會計、唯讀）：依上表，與 `PermissionCatalog.SystemRoles` 相同。
+  - 自訂角色（例如「部門管理者」）：比照該角色對 `projects` 的讀、新增、修改、刪除；沒有 `projects:read` 的自訂角色不補。理由是跟進紀錄寫在專案上，會看專案、改專案的人通常也要能看、能寫跟進紀錄。
 - 讀取：專案必須在 `ProjectAccessService.VisibleProjects` 內，且具備 `followups:read`。看不到專案一律回 404（不透露是否存在）；看得到專案但沒有 `followups:read` 回 403。
 - 因此主管看得到部屬寫的紀錄，範圍由角色（或個人覆寫）的資料範圍決定：
 
@@ -96,7 +98,8 @@
 - 專案的狀態欄位由唯一的重算函式 `FollowUpService.RecalculateAsync(project)` 寫入：
   - `LastFollowUpAt` = 最新一筆的 `OccurredAt`（沒有紀錄時為 NULL）。
   - `NextFollowUpOn` = 最新一筆的 `NextFollowUpOn`，但該筆 `NextDismissedAt` 不為 NULL 時為 NULL。
-- 新增、修改、刪除、不用跟進都在同一個 `SaveChanges` 交易內呼叫重算；其他程式不得直接寫這兩個欄位。
+- 新增、修改、刪除、不用跟進都在同一個資料庫交易內呼叫重算；其他程式不得直接寫這兩個欄位。
+- 重算以單一 `UPDATE projects SET … = (SELECT … FROM project_followups … LIMIT 1)` 完成（EF Core `ExecuteUpdateAsync`）：InnoDB 對 UPDATE 內的子查詢做加鎖讀取，同一專案兩人同時寫紀錄時，後寫的人會等前一筆交易完成並讀到它，不會算出過期的狀態。
 - 寫了新的一筆，前一筆的待辦自然結束（只看最新一筆），不需要另外打勾。
 - 刪除最新一筆時，狀態倒回前一筆的值（包含前一筆的下次聯絡日）。
 - 「不用跟進」只作用在最新一筆；沒有下次聯絡日時回 400。修改該筆的下次聯絡日會清掉 `NextDismissedAt`（重新提醒）。
@@ -115,14 +118,15 @@
 |---|---|---|
 | `GET /api/followups` | `followups:read` | 跨專案總表，見 4.2 |
 | `GET /api/projects/{projectId}/followups` | `followups:read` | `keyword`（主旨、內容、對象姓名）、`type`、`page`、`pageSize`；固定依 `OccurredAt` 新到舊；回 `{ total, page, pageSize, items }`，使用 `Modules/Common/ListQuery` |
-| `GET /api/projects/{projectId}/followups/contacts` | `followups:read` | 專案客戶的聯絡人（`id`、`name`、`title`），供表單下拉選單 |
+| `GET /api/projects/{projectId}/followups/contacts` | `followups:read` | 專案客戶的聯絡人（`id`、`name`、`title`），`keyword` 比對姓名與職稱，最多 20 筆，供表單下拉選單遠端查詢 |
 | `POST /api/projects/{projectId}/followups` | `followups:create` | 新增 |
 | `PUT /api/followups/{id}` | `followups:update` | 修改 |
 | `DELETE /api/followups/{id}` | `followups:delete` | 軟刪除 |
 | `POST /api/projects/{projectId}/followups/dismiss-next` | `followups:update` | 不用跟進 |
 
 - 聯絡人另開端點而不是呼叫 `GET /api/clients/{id}`：客戶的可見範圍是依客戶部門判斷，專案成員可能看得到專案卻看不到客戶。這個端點改以專案可見範圍授權，只回傳表單需要的欄位。
-- 每筆 item 回傳：`id`、`type`、`occurredAt`、`contactId`、`contactName`、`summary`、`content`、`nextFollowUpOn`、`nextAction`、`nextDismissedAt`、`createdBy`（id 與姓名）、`createdAt`、`updatedBy`（id 與姓名）、`updatedAt`、`canEdit`、`canDelete`。
+- 每筆 item 回傳：`id`、`projectId`、`type`、`occurredAt`、`contactId`、`contactName`、`summary`、`content`、`nextFollowUpOn`、`nextAction`、`nextDismissedAt`、`createdBy`（id 與姓名）、`createdAt`、`updatedBy`（id 與姓名，沒修改過為 null）、`updatedAt`。
+- 專案內列表另回 `canCreate`、`canUpdate`、`canDelete`（與訂單、保固列表相同的寫法；能寫專案的人對每一筆權限都一樣，所以不逐筆回傳）與 `project`（目前的 `lastFollowUpAt`、`nextFollowUpOn`、`nextAction`）。已結案專案三個旗標都是 false。
 - 寫入的回應帶回重算後的專案狀態：`{ item, project: { lastFollowUpAt, nextFollowUpOn, nextAction } }`。
 - 錯誤文案一律繁體中文，例如「發生時間不可晚於現在。」「下次聯絡日不可早於發生日期。」「聯絡人不屬於此專案的客戶。」
 
@@ -191,7 +195,7 @@
 - `npm run build:api`（0 警告）、`npm run test:api`。
 - 新增 `tests/followups-smoke.mjs` 與 `npm run test:smoke:followups`，涵蓋：
   - 看不到專案的業務讀寫皆 404；會計（沒有 `followups`）讀取 403，專案列表的跟進欄位為 `null`。
-  - 新增、修改、刪除與 `audit_logs`。
+  - 新增、修改、刪除（`audit_logs` 目前沒有查詢 API，寫入以程式審查確認）。
   - 補登較早的紀錄不改變 `NextFollowUpOn`；刪除最新一筆後倒回前一筆的值；不用跟進後為 NULL，修改日期後重新出現。
   - 已結案專案寫入 400；聯絡人不屬於該客戶 400；發生時間晚於現在 400。
   - 紀錄列表的關鍵字、類型、分頁與 `total`。
