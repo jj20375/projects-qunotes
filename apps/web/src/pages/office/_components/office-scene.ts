@@ -8,7 +8,7 @@ import Phaser from 'phaser';
 import type { Facing, OfficeMap, OfficeOccupant, OfficeSnapshot } from '@/shared/services/office-service';
 import { ensureTextures, TILE } from './office-textures';
 import { composeKenneyAvatars } from './office-avatars';
-import { KENNEY_SHEETS, OFFICE_TILE_FRAMES } from './office-tiles';
+import { OFFICE_SHEETS, OFFICE_TILE_FRAMES } from './office-tiles';
 import { facingTo, findPath, isWalkable, zoneAt, type Point } from './office-grid';
 
 const STEP_MS = 140;
@@ -78,13 +78,13 @@ export class OfficeScene extends Phaser.Scene {
   preload(): void {
     // 素材壞了不能讓整個辦公室打不開：記下失敗的 sheet，對應的圖塊或角色改用程式繪製的貼圖。
     this.load.on('loaderror', (file: Phaser.Loader.File) => { this.failedSheets.add(file.key); });
-    for (const sheet of Object.values(KENNEY_SHEETS)) this.load.spritesheet(sheet.key, sheet.url, { frameWidth: TILE, frameHeight: TILE, spacing: 1 });
+    for (const sheet of Object.values(OFFICE_SHEETS)) this.load.spritesheet(sheet.key, sheet.url, { frameWidth: TILE, frameHeight: TILE, spacing: 1 });
   }
 
   create(): void {
     if (this.failedSheets.size > 0) this.onAssetsFailed();
     // 要在 ensureTextures 之前登錄，同名的程式繪製角色才會被略過。
-    if (!this.failedSheets.has(KENNEY_SHEETS.characters.key)) composeKenneyAvatars(this);
+    if (!this.failedSheets.has(OFFICE_SHEETS.characters.key)) composeKenneyAvatars(this);
     // 不攔截按鍵（enableCapture=false），聊天輸入框才能正常打字；打字時 update 會忽略方向鍵。
     this.keys = this.input.keyboard!.addKeys({ up: 'UP', down: 'DOWN', left: 'LEFT', right: 'RIGHT', w: 'W', s: 'S', a: 'A', d: 'D' }, false) as Record<string, Phaser.Input.Keyboard.Key>;
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
@@ -298,10 +298,10 @@ export class OfficeScene extends Phaser.Scene {
     }
   }
 
-  // 有對照 frame 且素材載入成功就用素材圖塊（indoor sheet），否則用程式繪製的貼圖（ensureTextures 已先登錄）。
+  // 有對照 frame 且素材載入成功就用素材圖塊（OFFICE_SHEETS.tileset），否則用程式繪製的貼圖（ensureTextures 已先登錄）。
   private tile(x: number, y: number, key: string): Phaser.GameObjects.Image {
-    const frame = this.failedSheets.has(KENNEY_SHEETS.indoor.key) ? undefined : OFFICE_TILE_FRAMES[key];
-    return frame === undefined ? this.add.image(x, y, key).setOrigin(0) : this.add.image(x, y, KENNEY_SHEETS.indoor.key, frame).setOrigin(0);
+    const frame = this.failedSheets.has(OFFICE_SHEETS.tileset.key) ? undefined : OFFICE_TILE_FRAMES[key];
+    return frame === undefined ? this.add.image(x, y, key).setOrigin(0) : this.add.image(x, y, OFFICE_SHEETS.tileset.key, frame).setOrigin(0);
   }
 
   private pressedDirection(): Facing | null {
@@ -333,7 +333,7 @@ export class OfficeScene extends Phaser.Scene {
  * 建立 Phaser 遊戲並等場景 create 完成；呼叫端以動態 import 載入此模組，Phaser 只在 /office 下載。
  * @param parent 放 canvas 的容器元素，遊戲尺寸會跟著它縮放。
  * @param handlers 場景對外層的回呼。
- * @param onAssetsFailed 素材（indoor 或角色 spritesheet）載入失敗時呼叫一次，讓外層提示使用者已改用簡易圖案。
+ * @param onAssetsFailed 素材（辦公室圖塊或角色 spritesheet）載入失敗時呼叫一次，讓外層提示使用者已改用簡易圖案。
  * @returns 場景 create 完成後 resolve，附上 game（離開頁面時 destroy）與 scene。
  */
 export function createOfficeGame(parent: HTMLElement, handlers: OfficeSceneHandlers, onAssetsFailed?: () => void): Promise<{ game: Phaser.Game; scene: OfficeScene }> {

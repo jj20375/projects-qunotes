@@ -1,0 +1,15 @@
+Office Tileset (16x16 tiles, 1px spacing)
+
+Original artwork created for the QuotePlatform virtual office.
+According to the project owner, the image was produced with AI assistance: a script draws every
+tile pixel by pixel. It was not downloaded or copied from WorkAdventure or from any other tileset
+pack; the style is only loosely inspired by modern-office tilesets.
+
+License: CC0 1.0 Universal (Public Domain Dedication)
+https://creativecommons.org/publicdomain/zero/1.0/
+
+---
+
+本圖塊檔為 QuotePlatform 虛擬辦公室自製：依專案擁有者說明，由 AI 協助撰寫腳本逐像素繪製，
+並非從 WorkAdventure 或其他素材包下載或複製，風格僅概略參考現代辦公室圖塊。
+以 CC0 1.0（公眾領域貢獻宣告）釋出。

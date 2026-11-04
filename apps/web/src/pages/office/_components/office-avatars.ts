@@ -5,7 +5,7 @@
  */
 import type Phaser from 'phaser';
 import { TILE } from './office-textures';
-import { KENNEY_SHEETS, OFFICE_AVATAR_LAYERS, OFFICE_AVATAR_RECOLOR } from './office-tiles';
+import { OFFICE_SHEETS, OFFICE_AVATAR_LAYERS, OFFICE_AVATAR_RECOLOR } from './office-tiles';
 
 const FACINGS = ['up', 'down', 'left', 'right'] as const;
 // 素材只有正面圖：朝上時把正面圖壓暗一點，與朝下做出區別。
@@ -46,7 +46,7 @@ function rotateHue(image: ImageData, degrees: number): void {
  * @param scene 已載入 characters sheet 的 Phaser 場景。
  */
 export function composeKenneyAvatars(scene: Phaser.Scene): void {
-  const texture = scene.textures.get(KENNEY_SHEETS.characters.key);
+  const texture = scene.textures.get(OFFICE_SHEETS.characters.key);
   const source = texture.getSourceImage() as CanvasImageSource;
   for (const [avatarKey, layers] of Object.entries(OFFICE_AVATAR_LAYERS)) {
     const front = newCanvas();
