@@ -1,13 +1,15 @@
 using Microsoft.EntityFrameworkCore;
 using QuotePlatform.Api.Infrastructure;
 using QuotePlatform.Api.Modules.Common;
+using QuotePlatform.Api.Modules.FollowUps;
 
 namespace QuotePlatform.Api.Modules.Projects;
 
 /// <summary>專案搜尋、CRUD、狀態流程與成員。</summary>
-public sealed class ProjectService(QuoteDbContext db, ProjectAccessService access, ClientAccessService clientAccess, NumberSequenceService numbers, AuditService audit)
+public sealed class ProjectService(QuoteDbContext db, ProjectAccessService access, ClientAccessService clientAccess, NumberSequenceService numbers, AuditService audit, FollowUpService followUps)
 {
-    private static readonly string[] SortFields = ["createdAt", "projectNo", "name", "startDate", "endDate", "expectedAmount", "contractAmount", "status"];
+    private static readonly string[] SortFields = ["createdAt", "projectNo", "name", "startDate", "endDate", "expectedAmount", "contractAmount", "status", "nextFollowUpOn", "lastFollowUpAt"];
+    private static readonly string[] FollowUpSortFields = ["nextFollowUpOn", "lastFollowUpAt"];
 
     public async Task<ServiceResult<object>> SearchAsync(RequestScope scope, ProjectSearchQuery query, CancellationToken cancellationToken)
     {
@@ -16,9 +18,14 @@ public sealed class ProjectService(QuoteDbContext db, ProjectAccessService acces
         // 用 List 而非陣列：C# 14 會把 array.Contains 綁到 ReadOnlySpan 多載，EF Core 9 無法轉成 SQL IN。
         var statuses = (query.Status ?? []).Where(value => !string.IsNullOrWhiteSpace(value)).Distinct().ToList();
         if (statuses.Any(value => !ProjectStatuses.All.Contains(value))) return ServiceResult<object>.BadRequest("專案狀態不正確。");
+        // 沒有 followups:read 的人不能藉由篩選或排序推敲出跟進紀錄，所以直接忽略這些參數。
+        var canReadFollowUps = scope.Has("followups", "read");
+        var followUp = canReadFollowUps ? FollowUpRules.Clean(query.FollowUp) : null;
+        if (followUp is not null && !FollowUpRules.FilterValues.Contains(followUp)) return ServiceResult<object>.BadRequest("跟進狀態不正確。");
+        var sort = canReadFollowUps || !FollowUpSortFields.Contains(query.Sort) ? query.Sort : null;
 
         // 除了狀態以外的條件先套用，供狀態分頁籤計數；再套狀態取得列表。
-        var filtered = ApplyFilters(access.VisibleProjects(scope).AsNoTracking(), scope, query);
+        var filtered = ApplyFollowUpFilter(ApplyFilters(access.VisibleProjects(scope).AsNoTracking(), scope, query), followUp);
         var statusCounts = await filtered.GroupBy(value => value.Status).Select(group => new { Status = group.Key, Count = group.Count() }).ToDictionaryAsync(value => value.Status, value => value.Count, cancellationToken);
         if (statuses.Count > 0) filtered = filtered.Where(value => statuses.Contains(value.Status));
 
@@ -28,7 +35,7 @@ public sealed class ProjectService(QuoteDbContext db, ProjectAccessService acces
         var sumExpected = await filtered.SumAsync(value => value.ExpectedAmount ?? 0, cancellationToken);
         var sumContract = await filtered.SumAsync(value => value.ContractAmount ?? 0, cancellationToken);
 
-        var items = await Sort(filtered, query.Sort, query.Desc ?? true)
+        var items = await Sort(filtered, sort, query.Desc ?? true)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(value => new
@@ -49,6 +56,8 @@ public sealed class ProjectService(QuoteDbContext db, ProjectAccessService acces
                 value.Currency,
                 value.CreatedAt,
                 memberCount = value.Members.Count,
+                lastFollowUpAt = canReadFollowUps ? value.LastFollowUpAt : null,
+                nextFollowUpOn = canReadFollowUps ? value.NextFollowUpOn : null,
             })
             .ToListAsync(cancellationToken);
         return ServiceResult<object>.Ok(new
@@ -102,6 +111,8 @@ public sealed class ProjectService(QuoteDbContext db, ProjectAccessService acces
             activeWarranties = scope.Has("warranties", "read") ? await db.ProjectWarranties.CountAsync(value => value.ProjectId == projectId && value.EndDate >= today, cancellationToken) : (int?)null,
         };
 
+        var canReadFollowUps = scope.Has("followups", "read");
+        var nextAction = canReadFollowUps && project.NextFollowUpOn is not null ? await followUps.NextActionAsync(projectId, cancellationToken) : null;
         var nextStatuses = projectAccess.CanWrite
             ? ProjectStatuses.Transitions[project.Status].Where(value => value != ProjectStatuses.Closed || scope.HasOption("projects", "close")).ToArray()
             : [];
@@ -124,6 +135,9 @@ public sealed class ProjectService(QuoteDbContext db, ProjectAccessService acces
             project.Description,
             project.WonAt,
             project.ClosedAt,
+            lastFollowUpAt = canReadFollowUps ? project.LastFollowUpAt : null,
+            nextFollowUpOn = canReadFollowUps ? project.NextFollowUpOn : null,
+            nextAction,
             project.CreatedAt,
             project.UpdatedAt,
             myRole = project.OwnerUserId == scope.UserId ? "owner" : projectAccess.MemberRole,
@@ -314,8 +328,27 @@ public sealed class ProjectService(QuoteDbContext db, ProjectAccessService acces
             ("contractAmount", true) => projects.OrderByDescending(value => value.ContractAmount),
             ("status", false) => projects.OrderBy(value => value.Status),
             ("status", true) => projects.OrderByDescending(value => value.Status),
+            // 沒有排定的專案不論升降冪都排在最後。
+            ("nextFollowUpOn", false) => projects.OrderBy(value => value.NextFollowUpOn == null).ThenBy(value => value.NextFollowUpOn),
+            ("nextFollowUpOn", true) => projects.OrderBy(value => value.NextFollowUpOn == null).ThenByDescending(value => value.NextFollowUpOn),
+            ("lastFollowUpAt", false) => projects.OrderBy(value => value.LastFollowUpAt == null).ThenBy(value => value.LastFollowUpAt),
+            ("lastFollowUpAt", true) => projects.OrderBy(value => value.LastFollowUpAt == null).ThenByDescending(value => value.LastFollowUpAt),
             (_, false) => projects.OrderBy(value => value.CreatedAt),
             _ => projects.OrderByDescending(value => value.CreatedAt),
+        };
+    }
+
+    /// <summary>跟進狀態篩選；待跟進不含未得標、結案、取消的專案，逾期以台灣時間的今天為準。</summary>
+    private static IQueryable<Project> ApplyFollowUpFilter(IQueryable<Project> projects, string? followUp)
+    {
+        var inactive = FollowUpRules.InactiveProjectStatuses.ToList();
+        var today = BusinessTime.Today;
+        return followUp switch
+        {
+            "pending" => projects.Where(value => value.NextFollowUpOn != null && !inactive.Contains(value.Status)),
+            "overdue" => projects.Where(value => value.NextFollowUpOn < today && !inactive.Contains(value.Status)),
+            "none" => projects.Where(value => value.NextFollowUpOn == null),
+            _ => projects,
         };
     }
 

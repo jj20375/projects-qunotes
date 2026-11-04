@@ -22,6 +22,7 @@ namespace QuotePlatform.Api.Modules.Projects;
 /// <param name="PageSize">每頁筆數（預設為 20）。</param>
 /// <param name="Sort">排序欄位名稱。</param>
 /// <param name="Desc">是否為降冪排序。</param>
+/// <param name="FollowUp">跟進狀態篩選（pending 待跟進、overdue 已逾期、none 沒有下次聯絡）；沒有 followups:read 時忽略。</param>
 public sealed record ProjectSearchQuery(
     string? Keyword,
     string[]? Status,
@@ -38,7 +39,8 @@ public sealed record ProjectSearchQuery(
     int? Page,
     int? PageSize,
     string? Sort,
-    bool? Desc);
+    bool? Desc,
+    string? FollowUp);
 
 /// <summary>
 /// 專案建立與修改之資料輸入契約。

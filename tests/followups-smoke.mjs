@@ -224,6 +224,45 @@ await step('總表：部門（含下層）、撰寫人、關鍵字、日期區�
   assert.equal((await call('GET', `/api/followups?from=${taipeiDate()}&to=${taipeiDate(-1)}`, { token: admin })).status, 400);
 });
 
-// TASK6_STEPS
+await step('專案明細與列表：沒有 followups:read 的會計看到的跟進欄位為 null', async () => {
+  const detail = await ok(call('GET', `/api/projects/${pA}`, { token: accountant }));
+  assert.equal(detail.nextFollowUpOn, null);
+  assert.equal(detail.nextAction, null);
+  const list = await ok(call('GET', `/api/projects?keyword=${encodeURIComponent(`FU-A ${suffix}`)}`, { token: accountant }));
+  assert.equal(list.items[0].nextFollowUpOn, null);
+  assert.equal(list.items[0].lastFollowUpAt, null);
+  const mine = await ok(call('GET', `/api/projects/${pA}`, { token: salesA }));
+  assert.equal(mine.nextFollowUpOn, taipeiDate(5));
+  assert.equal(mine.nextAction, '寄修正版報價');
+});
+
+const projectIds = async (query, token = admin) => (await ok(call('GET', `/api/projects?keyword=${encodeURIComponent(suffix)}&${query}`, { token }))).items.map((value) => value.id);
+
+await step('專案列表：已逾期、待跟進、沒有下次聯絡的篩選，與下次聯絡排序（未排定排最後）', async () => {
+  assert.deepEqual(await projectIds('followUp=overdue'), [pB]);
+  assert.deepEqual((await projectIds('followUp=pending')).sort(), [pA, pB].sort());
+  assert.deepEqual(await projectIds('followUp=none'), [pF]);
+  assert.deepEqual(await projectIds('sort=nextFollowUpOn&desc=false'), [pB, pA, pF]);
+  assert.deepEqual(await projectIds('sort=nextFollowUpOn&desc=true'), [pA, pB, pF]);
+  assert.equal((await call('GET', '/api/projects?followUp=bogus', { token: admin })).status, 400);
+  assert.equal((await projectIds('followUp=overdue', accountant)).length, 3, '沒有 followups:read 時忽略跟進篩選');
+});
+
+await step('提醒範圍：未得標後不算待跟進但日期保留；已結案的專案只能讀', async () => {
+  await ok(call('POST', `/api/projects/${pB}/status`, { token: salesB, body: { status: 'quoting' } }));
+  await ok(call('POST', `/api/projects/${pB}/status`, { token: salesB, body: { status: 'lost', reason: '價格' } }));
+  assert.deepEqual(await projectIds('followUp=overdue'), []);
+  assert.deepEqual(await projectIds('followUp=pending'), [pA]);
+  assert.equal((await ok(call('GET', `/api/projects/${pB}`, { token: salesB }))).nextFollowUpOn, taipeiDate(-2));
+  await ok(call('POST', `/api/projects/${pB}/status`, { token: admin, body: { status: 'closed' } }));
+  const closed = await write(admin, pB, base());
+  assert.equal(closed.status, 400);
+  assert.equal(closed.data.message, '已結案的專案不可修改。');
+  assert.equal((await call('PUT', `/api/followups/${rB}`, { token: admin, body: base() })).status, 400);
+  const list = await ok(call('GET', `/api/projects/${pB}/followups`, { token: admin }));
+  assert.equal(list.canCreate, false);
+  assert.equal(list.canUpdate, false);
+  assert.equal(list.total, 1);
+});
 
 console.log(`\n${passed} 項跟進紀錄驗證通過`);
