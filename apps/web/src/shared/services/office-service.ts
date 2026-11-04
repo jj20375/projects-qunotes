@@ -137,11 +137,13 @@ export const OFFICE_EMOTES = [
 /** 可選的角色造型 key。 */
 export const OFFICE_AVATARS = ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8'] as const;
 
-/** 辦公室地板主題。 */
+/** 辦公室地圖風格主題。 */
 export const OFFICE_THEMES = [
-  { value: 'wood', label: '木地板' },
-  { value: 'carpet', label: '地毯' },
-  { value: 'dark', label: '深色' },
+  { value: 'wood', label: '現代木質' },
+  { value: 'carpet', label: '商務灰藍' },
+  { value: 'dark', label: '極客深色' },
+  { value: 'park', label: '綠意新創' },
+  { value: 'space', label: '星際太空艙' },
 ] as const;
 
 /**

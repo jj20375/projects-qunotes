@@ -15,7 +15,7 @@ const STEP_MS = 140;
 const TWEEN_MS = 150;
 const SLEEP_AFTER_MS = 60_000;
 const LABEL_STYLE: Phaser.Types.GameObjects.Text.TextStyle = { fontFamily: 'sans-serif', fontSize: '6px', color: '#ffffff', stroke: '#000000', strokeThickness: 2, resolution: 4 };
-const SEAT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = { fontFamily: 'sans-serif', fontSize: '5px', color: '#f5f5f5', resolution: 4 };
+const SEAT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = { fontFamily: 'sans-serif', fontSize: '5px', color: '#ffffff', stroke: '#0f172a', strokeThickness: 1.5, resolution: 4 };
 const BUBBLE_STYLE: Phaser.Types.GameObjects.Text.TextStyle = { fontFamily: 'sans-serif', fontSize: '6px', color: '#1f1f1f', resolution: 4, wordWrap: { width: 90, useAdvancedWrap: true } };
 const ICON_STYLE: Phaser.Types.GameObjects.Text.TextStyle = { fontFamily: 'sans-serif', fontSize: '8px', resolution: 4 };
 const STATUS_ICONS: Record<string, string> = { available: '', busy: '⛔', meeting: '📅', break: '☕', away: '🚶' };
@@ -315,9 +315,17 @@ export class OfficeScene extends Phaser.Scene {
 
   private fitCamera(): void {
     if (!this.office) return;
-    const fit = Math.min(this.scale.width / (this.office.width * TILE), this.scale.height / (this.office.height * TILE));
-    this.cameras.main.setZoom(Math.min(4, Math.max(2, Math.floor(fit * 2) / 2)));
-    this.cameras.main.setBounds(0, 0, this.office.width * TILE, this.office.height * TILE);
+    const mapW = this.office.width * TILE;
+    const mapH = this.office.height * TILE;
+    const fit = Math.min(this.scale.width / mapW, this.scale.height / mapH);
+    const zoom = Math.min(4, Math.max(1.5, Math.floor(fit * 4) / 4));
+    this.cameras.main.setZoom(zoom);
+    // 當畫面比地圖縮放後還寬或還高時，將鏡頭邊界往外推讓整張地圖自動置中，避免右側留下一大片黑邊
+    const viewW = this.scale.width / zoom;
+    const viewH = this.scale.height / zoom;
+    const boundX = viewW > mapW ? -(viewW - mapW) / 2 : 0;
+    const boundY = viewH > mapH ? -(viewH - mapH) / 2 : 0;
+    this.cameras.main.setBounds(boundX, boundY, Math.max(mapW, viewW), Math.max(mapH, viewH));
   }
 }
 

@@ -125,10 +125,16 @@ onBeforeUnmount(() => {
   game?.destroy(true);
 });
 
+const localThemeKey = (deptId: string) => `quote:office-theme:${deptId}`;
+
 async function join(target: string) {
   joining.value = true;
   try {
     const result = await hub.invoke<OfficeSnapshot>('JoinOffice', target);
+    const savedLocalTheme = localStorage.getItem(localThemeKey(target));
+    if (!canEditTheme.value && savedLocalTheme && OFFICE_THEMES.some((item) => item.value === savedLocalTheme)) {
+      result.map.theme = savedLocalTheme;
+    }
     if (target !== departmentId.value) messages.value = [];
     departmentId.value = target;
     snapshot.value = result;
@@ -198,7 +204,13 @@ async function goToKnock(knockInfo: OfficeKnock) {
 }
 
 async function changeTheme(theme: string) {
-  if (!departmentId.value) return;
+  if (!departmentId.value || !snapshot.value) return;
+  if (!canEditTheme.value) {
+    localStorage.setItem(localThemeKey(departmentId.value), theme);
+    snapshot.value = { ...snapshot.value, map: { ...snapshot.value.map, theme } };
+    scene?.loadOffice({ ...snapshot.value, occupants: occupantList.value }, meId);
+    return;
+  }
   try {
     await updateRoomThemeApi(departmentId.value, theme);
     await join(departmentId.value);
@@ -226,7 +238,7 @@ async function changeTheme(theme: string) {
         </template>
         <a-button>角色</a-button>
       </a-popover>
-      <a-select v-if="canEditTheme && snapshot" :value="snapshot.map.theme" :options="themeOptions" style="width: 100px" @change="(value: unknown) => { releaseFocus(); void changeTheme(String(value)); }" />
+      <a-select v-if="snapshot" :value="snapshot.map.theme" :options="themeOptions" style="width: 130px" @change="(value: unknown) => { releaseFocus(); void changeTheme(String(value)); }" />
     </div>
     <a-alert v-if="connectionState === 'reconnecting' || connectionState === 'disconnected'" type="warning" show-icon banner message="連線中斷，重新連線中…" />
     <div class="body">

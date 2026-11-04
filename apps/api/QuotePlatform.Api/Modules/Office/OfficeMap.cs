@@ -24,7 +24,7 @@ public sealed record OfficeZone(string Id, string Type, int X, int Y, int W, int
 }
 
 /// <summary>家具；只有 chair、rug、whiteboard 不擋路（whiteboard 掛在牆上）。</summary>
-/// <param name="Kind">家具種類：<c>desk</c>、<c>chair</c>、<c>meeting-table</c>、<c>coffee</c>、<c>fridge</c>、<c>counter</c>、<c>table</c>、<c>plant</c>、<c>whiteboard</c>、<c>rug</c>。</param>
+/// <param name="Kind">家具種類：<c>desk</c>、<c>desk-side</c>、<c>chair</c>、<c>meeting-table</c>、<c>coffee</c>、<c>fridge</c>、<c>counter</c>、<c>water</c>、<c>table</c>、<c>sofa</c>、<c>bookshelf</c>、<c>plant</c>、<c>whiteboard</c>、<c>rug</c>、<c>cabinet</c>。</param>
 /// <param name="X">橫向格座標。</param>
 /// <param name="Y">縱向格座標。</param>
 public sealed record OfficeFurniture(string Kind, int X, int Y);
@@ -118,30 +118,34 @@ public static class OfficeMapGenerator
     private const int SeatsPerCluster = 4;
     private const int SeatsPerBand = ClustersPerBand * SeatsPerCluster;
     private const int PantryWidth = 6;
+    private const int MeetingWidth = 12;
+    private const int LoungeWidth = 8;
     private const int RoomHeight = 6;
-    private const int EntranceWidth = 5;
+    private const int EntranceWidth = 6;
     private const int BandHeight = 5;
-    // 上牆(0)、茶水間與會議室(1..6)、隔牆(7)、走道(8) 之後才是第一排桌位。
+    private const int ClusterPitchX = 7;
+    // 上牆(0)、茶水間／會議室／交誼廳(1..6)、隔牆(7)、主走道(8) 之後才是第一排桌位。
     private const int FirstBandY = RoomHeight + 3;
 
     /// <summary>
-    /// 依成員產生辦公室地圖。
+    /// 依成員產生寬螢幕現代辦公室地圖。
     /// </summary>
     /// <remarks>
-    /// 版面：上方左茶水間、右會議室（≤8 人寬 8 格，否則 12 格），中間一道有門的隔牆；
-    /// 下方左側入口，右側桌位以 4 人一組（兩兩對坐）排列，一排固定 3 組，人多往下加排。
-    /// 每排組數固定，所以會議室變寬或加排時，原有成員的座位不會移動。
+    /// 版面：上方左茶水吧台間、中大型會議室、右沙發交誼廳，中間一道有雙開門的隔牆；
+    /// 下方左側迎賓接待區，右側工作站以 4 人一組（每人 2 格寬 L 型電腦桌、兩兩對坐、中間隔以植栽與收納櫃）排列，
+    /// 一排固定 3 組，最少 2 排以填滿寬螢幕比例，人多往下加排。
+    /// 每排組數與上方房間寬度固定，所以新增成員時原有成員的座位不會移動。
     /// </remarks>
     /// <param name="owners">依加入部門先後排序的成員清單。</param>
     /// <param name="theme">主題名稱，原樣寫入地圖。</param>
     /// <returns>含牆、家具、區塊、座位與入口的地圖。</returns>
     public static OfficeMap Generate(IReadOnlyList<OfficeSeatOwner> owners, string theme)
     {
-        var meetingWidth = owners.Count <= 8 ? 8 : 12;
-        var width = PantryWidth + meetingWidth + 3;
-        var bands = Math.Max(1, (owners.Count + SeatsPerBand - 1) / SeatsPerBand);
+        var width = PantryWidth + MeetingWidth + LoungeWidth + 4;
+        var bands = Math.Max(2, (owners.Count + SeatsPerBand - 1) / SeatsPerBand);
         var height = FirstBandY + bands * BandHeight + 1;
         var meetingX = PantryWidth + 2;
+        var loungeX = meetingX + MeetingWidth + 1;
         var dividerY = RoomHeight + 1;
 
         var grid = new char[height][];
@@ -151,9 +155,18 @@ public static class OfficeMapGenerator
             for (var x = 0; x < width; x++) grid[y][x] = x == 0 || y == 0 || x == width - 1 || y == height - 1 ? '#' : '.';
         }
         for (var x = 1; x < width - 1; x++) grid[dividerY][x] = '#';
-        for (var y = 1; y < dividerY; y++) grid[y][PantryWidth + 1] = '#';
+        for (var y = 1; y < dividerY; y++)
+        {
+            grid[y][PantryWidth + 1] = '#';
+            grid[y][loungeX - 1] = '#';
+        }
+        // 三間房間皆設雙格寬門，讓動線與視覺更開闊
         grid[dividerY][3] = '.';
-        grid[dividerY][meetingX + meetingWidth / 2] = '.';
+        grid[dividerY][4] = '.';
+        grid[dividerY][meetingX + MeetingWidth / 2 - 1] = '.';
+        grid[dividerY][meetingX + MeetingWidth / 2] = '.';
+        grid[dividerY][loungeX + LoungeWidth / 2 - 1] = '.';
+        grid[dividerY][loungeX + LoungeWidth / 2] = '.';
 
         var furniture = new List<OfficeFurniture>();
         void Place(string kind, int x, int y, bool blocking = true)
@@ -162,35 +175,71 @@ public static class OfficeMapGenerator
             if (blocking) grid[y][x] = 'f';
         }
 
+        // 左上：茶水吧台間（保留 (2,1) 冰箱與 (2,2)、(1,2) 可走，符合規則自檢）
         Place("coffee", 1, 1);
         Place("fridge", 2, 1);
         Place("counter", 3, 1);
         Place("counter", 4, 1);
+        Place("water", 5, 1);
         Place("plant", PantryWidth, 1);
         Place("table", 3, 4);
         Place("table", 4, 4);
 
-        Place("whiteboard", meetingX + meetingWidth / 2, 0, blocking: false);
-        Place("plant", meetingX + meetingWidth - 1, 1);
-        for (var x = meetingX + 2; x <= meetingX + meetingWidth - 3; x++)
+        // 中上：大型簡報會議室（保留 (9,2)、(14,5)、(9,6) 可走，符合規則自檢）
+        Place("whiteboard", meetingX + MeetingWidth / 2 - 1, 0, blocking: false);
+        Place("whiteboard", meetingX + MeetingWidth / 2, 0, blocking: false);
+        Place("plant", meetingX, 1);
+        Place("plant", meetingX + MeetingWidth - 1, 1);
+        for (var x = meetingX + 3; x <= meetingX + MeetingWidth - 4; x++)
         {
+            Place("chair", x, 2, blocking: false);
             Place("meeting-table", x, 3);
             Place("meeting-table", x, 4);
+            Place("chair", x, 5, blocking: false);
         }
 
+        // 右上：沙發交誼廳与圖書角
+        Place("bookshelf", loungeX + 1, 1);
+        Place("bookshelf", loungeX + 2, 1);
+        Place("bookshelf", loungeX + 3, 1);
+        Place("cabinet", loungeX + 5, 1);
+        Place("plant", loungeX + LoungeWidth - 1, 1);
+        Place("sofa", loungeX + 2, 3);
+        Place("sofa", loungeX + 4, 3);
+        Place("rug", loungeX + 2, 4, blocking: false);
+        Place("table", loungeX + 3, 4);
+        Place("rug", loungeX + 4, 4, blocking: false);
+
+        // 左下：迎賓接待大廳與入口
+        Place("plant", 1, dividerY + 2);
+        Place("sofa", 2, dividerY + 4);
+        Place("table", 3, dividerY + 4);
+        Place("bookshelf", 5, dividerY + 2);
         var spawn = new OfficePoint(3, height - 3);
         Place("rug", spawn.X, spawn.Y, blocking: false);
+        Place("rug", spawn.X + 1, spawn.Y, blocking: false);
         Place("plant", 1, height - 2);
+        Place("water", 5, height - 2);
 
-        var usedClusters = (owners.Count + SeatsPerCluster - 1) / SeatsPerCluster;
-        for (var cluster = 0; cluster < usedClusters; cluster++)
+        // 右下：現代工作站島區（每組 4 人，每人享有主電腦桌 + 側桌，中間設植栽與事務櫃，拉開座位間距避免姓名重疊）
+        var totalClusters = bands * ClustersPerBand;
+        for (var cluster = 0; cluster < totalClusters; cluster++)
         {
             var (left, top) = ClusterOrigin(cluster);
-            for (var column = 0; column < 2; column++)
+            foreach (var offset in new[] { 0, 3 })
             {
-                Place("desk", left + column, top + 1);
-                Place("desk", left + column, top + 2);
+                Place("desk", left + offset, top + 1);
+                Place("desk-side", left + offset + 1, top + 1);
+                Place("desk", left + offset, top + 2);
+                Place("desk-side", left + offset + 1, top + 2);
             }
+            Place("plant", left + 2, top + 1);
+            Place("cabinet", left + 2, top + 2);
+        }
+
+        for (var band = 0; band < bands; band++)
+        {
+            Place("plant", width - 2, FirstBandY + band * BandHeight + 1);
         }
 
         var seats = new List<OfficeSeat>(owners.Count);
@@ -199,7 +248,7 @@ public static class OfficeMapGenerator
             var (left, top) = ClusterOrigin(index / SeatsPerCluster);
             var slot = index % SeatsPerCluster;
             var upper = slot < 2;
-            var x = left + slot % 2;
+            var x = left + (slot % 2) * 3;
             var y = upper ? top : top + 3;
             Place("chair", x, y, blocking: false);
             seats.Add(new OfficeSeat(owners[index].MembershipId, owners[index].Name, x, y, upper ? "down" : "up", owners[index].LastSeenAt));
@@ -209,14 +258,15 @@ public static class OfficeMapGenerator
         OfficeZone[] zones =
         [
             new("pantry", "pantry", 1, 1, PantryWidth, RoomHeight),
-            new("meeting", "meeting", meetingX, 1, meetingWidth, RoomHeight),
+            new("meeting", "meeting", meetingX, 1, MeetingWidth, RoomHeight),
+            new("lounge", "pantry", loungeX, 1, LoungeWidth, RoomHeight),
             new("entrance", "entrance", 1, dividerY + 1, EntranceWidth, bottomHeight),
             new("desk", "desk", EntranceWidth + 1, dividerY + 1, width - EntranceWidth - 2, bottomHeight),
         ];
         return new OfficeMap(width, height, TileSize, theme, grid.Select(row => new string(row)).ToArray(), furniture, zones, seats, spawn);
 
         static (int Left, int Top) ClusterOrigin(int cluster) =>
-            (EntranceWidth + 2 + cluster % ClustersPerBand * 3, FirstBandY + cluster / ClustersPerBand * BandHeight);
+            (EntranceWidth + 2 + cluster % ClustersPerBand * ClusterPitchX, FirstBandY + cluster / ClustersPerBand * BandHeight);
     }
 
     /// <summary>供 <c>--self-test</c> 驗證地圖產生規則。</summary>

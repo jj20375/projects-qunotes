@@ -15,7 +15,7 @@ public static class OfficeRules
     public static readonly IReadOnlyList<string> Avatars = ["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8"];
 
     /// <summary>地圖主題清單。</summary>
-    public static readonly IReadOnlyList<string> Themes = ["wood", "carpet", "dark"];
+    public static readonly IReadOnlyList<string> Themes = ["wood", "carpet", "dark", "park", "space"];
 
     /// <summary>座位朝向清單。</summary>
     public static readonly IReadOnlyList<string> Facings = ["up", "down", "left", "right"];

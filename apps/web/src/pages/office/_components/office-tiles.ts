@@ -1,13 +1,14 @@
 /**
  * @file office-tiles.ts
- * Kenney CC0 素材（Roguelike Indoors 與 Roguelike Characters）與語意貼圖鍵的對照。
- * 沒有列在這裡的鍵（深色主題的地板與牆、冰箱等）使用 office-textures.ts 的程式繪製版本；對應的素材載入失敗時改用程式繪製。
+ * WorkAdventure 風格現代辦公室圖資（CC0）與 Kenney 角色圖資（CC0）與語意貼圖鍵的對照。
+ * 對應的素材載入失敗時改用 office-textures.ts 的程式繪製版本。
  * 角色由 office-avatars.ts 依 OFFICE_AVATAR_LAYERS 把多層 frame 疊成單張貼圖。
  */
 
-/** Kenney 素材包的 spritesheet 設定（16×16 圖塊、圖塊之間 1px 間隔，共 27 欄 18 列，frame = 列 × 27 + 欄）。 */
+/** 素材包的 spritesheet 設定（16×16 圖塊、圖塊之間 1px 間隔）。 */
 export const KENNEY_SHEETS = {
-  indoor: { key: 'kenney-indoor', url: '/office/kenney/roguelike-indoors/roguelikeIndoor_transparent.png' },
+  /** WorkAdventure 風格現代辦公室圖塊：16×16 圖塊、1px 間隔，共 10 欄 5 列（frame = 列 × 10 + 欄）。 */
+  indoor: { key: 'kenney-indoor', url: '/office/workadventure/office_tileset.png' },
   /** Roguelike Characters：16×16 圖塊、1px 間隔，共 54 欄 12 列（frame = 列 × 54 + 欄）；只有正面圖，且身體、衣服、髮型各自是獨立圖層。 */
   characters: { key: 'kenney-characters', url: '/office/kenney/roguelike-characters/roguelikeChar_transparent.png' },
 } as const;
@@ -17,28 +18,52 @@ export const KENNEY_SHEETS = {
  * 鍵名規則與 office-textures.ts 相同：floor-{theme}-{zone}、wall-{theme}、furniture-{kind}。
  */
 export const OFFICE_TILE_FRAMES: Partial<Record<string, number>> = {
-  // 木質主題：直紋木地板為主，會議區鋪橘色地毯，茶水間用方格地磚
-  'floor-wood-desk': 32,
-  'floor-wood-meeting': 24,
-  'floor-wood-pantry': 5,
-  'floor-wood-entrance': 32,
-  'wall-wood': 147,
-  // 地毯主題：綠色橫紋地毯，茶水間同樣用方格地磚；素材沒有第二種牆，沿用奶油色牆面
-  'wall-carpet': 147,
-  'floor-carpet-desk': 132,
-  'floor-carpet-meeting': 159,
-  'floor-carpet-pantry': 5,
-  'floor-carpet-entrance': 132,
-  // 家具（Kenney 沒有冰箱，furniture-fridge 與深色主題維持程式繪製）
-  'furniture-desk': 58,
-  'furniture-chair': 54,
-  'furniture-meeting-table': 1,
-  'furniture-coffee': 330,
-  'furniture-counter': 324,
-  'furniture-table': 7,
-  'furniture-plant': 16,
-  'furniture-whiteboard': 18,
-  'furniture-rug': 425,
+  // 現代木質主題（wood）
+  'floor-wood-desk': 0,
+  'floor-wood-meeting': 1,
+  'floor-wood-pantry': 2,
+  'floor-wood-entrance': 3,
+  'wall-wood': 4,
+  // 商務灰藍主題（carpet）
+  'floor-carpet-desk': 5,
+  'floor-carpet-meeting': 6,
+  'floor-carpet-pantry': 7,
+  'floor-carpet-entrance': 8,
+  'wall-carpet': 9,
+  // 極客深色主題（dark）
+  'floor-dark-desk': 10,
+  'floor-dark-meeting': 11,
+  'floor-dark-pantry': 12,
+  'floor-dark-entrance': 13,
+  'wall-dark': 14,
+  // 綠意新創主題（park）
+  'floor-park-desk': 15,
+  'floor-park-meeting': 16,
+  'floor-park-pantry': 17,
+  'floor-park-entrance': 18,
+  'wall-park': 19,
+  // 星際太空艙主題（space）
+  'floor-space-desk': 20,
+  'floor-space-meeting': 21,
+  'floor-space-pantry': 22,
+  'floor-space-entrance': 23,
+  'wall-space': 24,
+  // 現代辦公室家具
+  'furniture-desk': 30,
+  'furniture-desk-side': 31,
+  'furniture-chair': 32,
+  'furniture-meeting-table': 33,
+  'furniture-coffee': 34,
+  'furniture-fridge': 35,
+  'furniture-counter': 36,
+  'furniture-water': 37,
+  'furniture-table': 38,
+  'furniture-sofa': 39,
+  'furniture-bookshelf': 40,
+  'furniture-plant': 41,
+  'furniture-whiteboard': 42,
+  'furniture-rug': 43,
+  'furniture-cabinet': 44,
 };
 
 /**
