@@ -127,14 +127,31 @@ onBeforeUnmount(() => {
 
 const localThemeKey = (deptId: string) => `quote:office-theme:${deptId}`;
 
+// 瀏覽器封鎖網站資料時，連存取 window.localStorage 都會丟 SecurityError；
+// 此時 JoinOffice 已成功，不能讓主題偏好的讀寫失敗拖垮整個辦公室載入。
+function readLocalTheme(deptId: string): string | null {
+  try {
+    const saved = localStorage.getItem(localThemeKey(deptId));
+    return saved && OFFICE_THEMES.some((item) => item.value === saved) ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeLocalTheme(deptId: string, theme: string) {
+  try {
+    localStorage.setItem(localThemeKey(deptId), theme);
+  } catch {
+    // 儲存被封鎖時，本次仍會套用在目前畫面，只是重新整理後不會記住。
+  }
+}
+
 async function join(target: string) {
   joining.value = true;
   try {
     const result = await hub.invoke<OfficeSnapshot>('JoinOffice', target);
-    const savedLocalTheme = localStorage.getItem(localThemeKey(target));
-    if (!canEditTheme.value && savedLocalTheme && OFFICE_THEMES.some((item) => item.value === savedLocalTheme)) {
-      result.map.theme = savedLocalTheme;
-    }
+    const savedLocalTheme = canEditTheme.value ? null : readLocalTheme(target);
+    if (savedLocalTheme) result.map.theme = savedLocalTheme;
     if (target !== departmentId.value) messages.value = [];
     departmentId.value = target;
     snapshot.value = result;
@@ -206,7 +223,7 @@ async function goToKnock(knockInfo: OfficeKnock) {
 async function changeTheme(theme: string) {
   if (!departmentId.value || !snapshot.value) return;
   if (!canEditTheme.value) {
-    localStorage.setItem(localThemeKey(departmentId.value), theme);
+    writeLocalTheme(departmentId.value, theme);
     snapshot.value = { ...snapshot.value, map: { ...snapshot.value.map, theme } };
     scene?.loadOffice({ ...snapshot.value, occupants: occupantList.value }, meId);
     return;
@@ -238,7 +255,9 @@ async function changeTheme(theme: string) {
         </template>
         <a-button>角色</a-button>
       </a-popover>
-      <a-select v-if="snapshot" :value="snapshot.map.theme" :options="themeOptions" style="width: 130px" @change="(value: unknown) => { releaseFocus(); void changeTheme(String(value)); }" />
+      <a-tooltip v-if="snapshot" :title="canEditTheme ? undefined : '只套用在你自己的畫面'">
+        <a-select :value="snapshot.map.theme" :options="themeOptions" style="width: 130px" @change="(value: unknown) => { releaseFocus(); void changeTheme(String(value)); }" />
+      </a-tooltip>
     </div>
     <a-alert v-if="connectionState === 'reconnecting' || connectionState === 'disconnected'" type="warning" show-icon banner message="連線中斷，重新連線中…" />
     <div class="body">

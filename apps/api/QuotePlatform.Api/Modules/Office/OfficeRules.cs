@@ -101,7 +101,7 @@ public static class OfficeRules
         }
         Guid Id(int value) => new(value, 0, 0, new byte[8]);
 
-        // 0 人的地圖：入口 (3,12)，會議室 x 8..15、y 1..6，冰箱在 (2,1)。
+        // 0 人的地圖：入口 (3,17)，會議室 x 8..19、y 1..6，冰箱在 (2,1)。
         var map = OfficeMapGenerator.Generate([], "wood");
         var spawn = map.Spawn;
         Check(IsValidStep(map, spawn, new(spawn.X + 1, spawn.Y)), "相鄰可走的格子被拒");

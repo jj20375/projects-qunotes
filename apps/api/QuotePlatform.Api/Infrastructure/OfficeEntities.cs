@@ -12,7 +12,7 @@ public sealed class OfficeRoom : ICompanyOwned
     /// <summary>所屬部門識別碼；一個部門一間辦公室。</summary>
     public Guid DepartmentId { get; set; }
 
-    /// <summary>地圖主題：wood（木地板）／carpet（地毯）／dark（深色）。</summary>
+    /// <summary>地圖主題：wood（木地板）／carpet（地毯）／dark（深色）／park（公園綠意）／space（太空藍）。</summary>
     public string Theme { get; set; } = "wood";
 
     /// <summary>建立時間戳記（UTC）。</summary>

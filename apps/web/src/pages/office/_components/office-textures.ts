@@ -1,6 +1,6 @@
 /**
  * @file office-textures.ts
- * 以程式繪製 16×16 圖塊與角色；Kenney 素材（Task 11）載入失敗或尚未加入時使用。
+ * 以程式繪製 16×16 圖塊與角色；office-tiles.ts 的圖塊或角色素材載入失敗時作為備援。
  * 貼圖鍵名：floor-{theme}-{zone}、wall-{theme}、furniture-{kind}、avatar-{key}-{facing}。
  */
 import type Phaser from 'phaser';
@@ -73,7 +73,7 @@ function drawAvatar(g: Phaser.GameObjects.Graphics, color: number, facing: strin
 /**
  * 確保場景已有指定主題所需的全部貼圖（地板、牆、家具、角色）；已存在的鍵名不會重畫。
  * @param scene 要登錄貼圖的 Phaser 場景。
- * @param theme 地圖主題（wood／carpet／dark）；未知主題以 wood 配色，但貼圖鍵名仍用傳入值。
+ * @param theme 地圖主題（wood／carpet／dark／park／space）；未知主題以 wood 配色，但貼圖鍵名仍用傳入值。
  */
 export function ensureTextures(scene: Phaser.Scene, theme: string): void {
   const palette = PALETTES[(theme in PALETTES ? theme : 'wood') as keyof typeof PALETTES];

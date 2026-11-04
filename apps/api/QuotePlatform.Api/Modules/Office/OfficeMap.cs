@@ -7,8 +7,12 @@ namespace QuotePlatform.Api.Modules.Office;
 /// <param name="Y">縱向格座標，由上至下遞增。</param>
 public sealed record OfficePoint(int X, int Y);
 
-/// <summary>地圖區塊；會議室與茶水間是「同區塊即聊」的房間。</summary>
-/// <param name="Id">區塊識別碼，例如 <c>pantry</c>、<c>meeting</c>。</param>
+/// <summary>
+/// 地圖區塊；會議室與茶水間是「同區塊即聊」的房間。
+/// 交誼廳（<c>lounge</c>）刻意沿用 <c>pantry</c> 類型，所以同樣是同區塊即聊的房間，
+/// 前端地板也用茶水間貼圖；<c>break</c> 狀態只會走到第一個 <c>pantry</c>（茶水間）。
+/// </summary>
+/// <param name="Id">區塊識別碼，例如 <c>pantry</c>、<c>meeting</c>、<c>lounge</c>。</param>
 /// <param name="Type">區塊類型：<c>desk</c>、<c>meeting</c>、<c>pantry</c>、<c>entrance</c>。</param>
 /// <param name="X">區塊左上角的橫向格座標。</param>
 /// <param name="Y">區塊左上角的縱向格座標。</param>
@@ -123,7 +127,11 @@ public static class OfficeMapGenerator
     private const int RoomHeight = 6;
     private const int EntranceWidth = 6;
     private const int BandHeight = 5;
-    private const int ClusterPitchX = 7;
+    // 同一組內兩個直欄人位（左右各一台桌＋側桌，各佔 2 格）的起點間距；
+    // 小於 3 時兩人的姓名牌會互相重疊，椅子座標也必須用同一個間距才會落在桌前。
+    private const int DeskPitchX = 3;
+    // 一組寬 5 格（兩欄人位＋中間植栽／收納櫃）＋2 格通道，通道讓叢集之間與右側植栽旁都走得過去。
+    private const int ClusterPitchX = DeskPitchX + 2 + 2;
     // 上牆(0)、茶水間／會議室／交誼廳(1..6)、隔牆(7)、主走道(8) 之後才是第一排桌位。
     private const int FirstBandY = RoomHeight + 3;
 
@@ -160,7 +168,7 @@ public static class OfficeMapGenerator
             grid[y][PantryWidth + 1] = '#';
             grid[y][loungeX - 1] = '#';
         }
-        // 三間房間皆設雙格寬門，讓動線與視覺更開闊
+        // 門寬 2 格：單格門會被站在門口的人整個堵住。
         grid[dividerY][3] = '.';
         grid[dividerY][4] = '.';
         grid[dividerY][meetingX + MeetingWidth / 2 - 1] = '.';
@@ -175,7 +183,8 @@ public static class OfficeMapGenerator
             if (blocking) grid[y][x] = 'f';
         }
 
-        // 左上：茶水吧台間（保留 (2,1) 冰箱與 (2,2)、(1,2) 可走，符合規則自檢）
+        // 左上：茶水吧台間。(2,1) 必須是家具、(1,2)(2,2) 必須可走：
+        // OfficeRules.AssertExamples 站在這幾格驗證「走進牆／家具被拒」與「目標是家具時改放旁邊空格」。
         Place("coffee", 1, 1);
         Place("fridge", 2, 1);
         Place("counter", 3, 1);
@@ -185,7 +194,8 @@ public static class OfficeMapGenerator
         Place("table", 3, 4);
         Place("table", 4, 4);
 
-        // 中上：大型簡報會議室（保留 (9,2)、(14,5)、(9,6) 可走，符合規則自檢）
+        // 中上：大型簡報會議室。(9,2)(14,5)(9,6) 必須可走且位於會議室內：
+        // OfficeRules.AssertExamples 讓角色站在這幾格驗證會議室內即聊的收訊範圍。
         Place("whiteboard", meetingX + MeetingWidth / 2 - 1, 0, blocking: false);
         Place("whiteboard", meetingX + MeetingWidth / 2, 0, blocking: false);
         Place("plant", meetingX, 1);
@@ -198,7 +208,7 @@ public static class OfficeMapGenerator
             Place("chair", x, 5, blocking: false);
         }
 
-        // 右上：沙發交誼廳与圖書角
+        // 右上：沙發交誼廳與圖書角
         Place("bookshelf", loungeX + 1, 1);
         Place("bookshelf", loungeX + 2, 1);
         Place("bookshelf", loungeX + 3, 1);
@@ -221,12 +231,12 @@ public static class OfficeMapGenerator
         Place("plant", 1, height - 2);
         Place("water", 5, height - 2);
 
-        // 右下：現代工作站島區（每組 4 人，每人享有主電腦桌 + 側桌，中間設植栽與事務櫃，拉開座位間距避免姓名重疊）
+        // 右下：工作站島區，每組 4 人。
         var totalClusters = bands * ClustersPerBand;
         for (var cluster = 0; cluster < totalClusters; cluster++)
         {
             var (left, top) = ClusterOrigin(cluster);
-            foreach (var offset in new[] { 0, 3 })
+            for (var offset = 0; offset < 2 * DeskPitchX; offset += DeskPitchX)
             {
                 Place("desk", left + offset, top + 1);
                 Place("desk-side", left + offset + 1, top + 1);
@@ -248,7 +258,7 @@ public static class OfficeMapGenerator
             var (left, top) = ClusterOrigin(index / SeatsPerCluster);
             var slot = index % SeatsPerCluster;
             var upper = slot < 2;
-            var x = left + (slot % 2) * 3;
+            var x = left + (slot % 2) * DeskPitchX;
             var y = upper ? top : top + 3;
             Place("chair", x, y, blocking: false);
             seats.Add(new OfficeSeat(owners[index].MembershipId, owners[index].Name, x, y, upper ? "down" : "up", owners[index].LastSeenAt));
@@ -265,6 +275,8 @@ public static class OfficeMapGenerator
         ];
         return new OfficeMap(width, height, TileSize, theme, grid.Select(row => new string(row)).ToArray(), furniture, zones, seats, spawn);
 
+        // +2：入口區（寬 EntranceWidth）之後再空出一格縱向走道，第一組桌位才開始；
+        // 座位只由 cluster 編號決定，與人數、排數無關，這是「新增成員不移動既有座位」的前提。
         static (int Left, int Top) ClusterOrigin(int cluster) =>
             (EntranceWidth + 2 + cluster % ClustersPerBand * ClusterPitchX, FirstBandY + cluster / ClustersPerBand * BandHeight);
     }
@@ -280,21 +292,34 @@ public static class OfficeMapGenerator
         }
 
         Check(JsonSerializer.Serialize(Generate(owners[..5], "wood")) == JsonSerializer.Serialize(Generate(owners[..5], "wood")), "同樣的成員必須產生同樣的地圖");
-        foreach (var count in new[] { 0, 1, 8, 9, 12, 13, 30 })
+        foreach (var count in new[] { 0, 1, 4, 12, 13, 24, 25, 30 })
         {
             var map = Generate(owners[..count], "wood");
             Check(map.Grid.Count == map.Height && map.Grid.All(row => row.Length == map.Width), $"{count} 人：地圖尺寸不一致");
+            var expectedBands = Math.Max(2, (count + SeatsPerBand - 1) / SeatsPerBand);
+            Check(map.Height == FirstBandY + expectedBands * BandHeight + 1, $"{count} 人：桌位排數應為 {expectedBands} 排");
             Check(map.Seats.Count == count, $"{count} 人：座位數與成員數不符");
             Check(map.Seats.Select(seat => (seat.X, seat.Y)).Distinct().Count() == count, $"{count} 人：座位重複");
+            Check(map.IsWalkable(map.Spawn.X, map.Spawn.Y) && map.ZoneAt(map.Spawn.X, map.Spawn.Y)?.Type == "entrance", $"{count} 人：入口必須是入口區內的可走格");
             var reachable = map.Distances(map.Spawn);
             Check(map.Seats.All(seat => reachable.ContainsKey(new OfficePoint(seat.X, seat.Y))), $"{count} 人：有座位從入口走不到");
             Check(map.Zones.All(zone => reachable.Keys.Any(point => zone.Contains(point.X, point.Y))), $"{count} 人：有區塊從入口走不到");
         }
-        foreach (var (before, after) in new[] { (8, 9), (12, 13) })
+
+        // 24 人剛好填滿 2 排；第 25 人才新增第 3 排，地圖只往下加高一排。
+        // 入口（Spawn）刻意不比對：它貼著底部，會隨 Height 下移，規則只保證座位不動。
+        var twoBands = Generate(owners[..24], "wood");
+        var threeBands = Generate(owners[..25], "wood");
+        Check(Generate([], "wood").Height == twoBands.Height, "0 人與 24 人都應是最少的 2 排桌位");
+        Check(threeBands.Height == twoBands.Height + BandHeight, "第 25 人應新增第 3 排桌位，地圖高度增加一排");
+        Check(threeBands.Width == twoBands.Width, "新增桌位排不應改變地圖寬度");
+
+        // 座位穩定：4→5 跨叢集、12→13 跨到第 2 排、24→25 與 24→30 跨到第 3 排（排數增加）。
+        foreach (var (before, after) in new[] { (4, 5), (12, 13), (24, 25), (24, 30) })
         {
             var earlier = Generate(owners[..before], "wood").Seats;
             var later = Generate(owners[..after], "wood").Seats;
-            Check(earlier.Select((seat, index) => seat.X == later[index].X && seat.Y == later[index].Y).All(same => same), $"{before}→{after} 人：新增成員後原有座位被移動");
+            Check(earlier.Select((seat, index) => seat.X == later[index].X && seat.Y == later[index].Y && seat.Facing == later[index].Facing).All(same => same), $"{before}→{after} 人：新增成員後原有座位被移動");
         }
     }
 }

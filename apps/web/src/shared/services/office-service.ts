@@ -26,7 +26,10 @@ export interface PresenceEntry {
   officeDepartmentId: string | null;
 }
 
-/** 地圖上的功能區塊（座位區、會議區、茶水間、入口），以格子為單位。 */
+/**
+ * 地圖上的功能區塊（座位區、會議區、茶水間、入口），以格子為單位。
+ * 交誼廳（id 為 lounge）沿用 type 'pantry'：與茶水間一樣是同區塊即聊的房間；status 為 break 時前端只會走到清單中第一個 pantry（茶水間）。
+ */
 export interface OfficeZone {
   id: string;
   type: 'desk' | 'meeting' | 'pantry' | 'entrance';

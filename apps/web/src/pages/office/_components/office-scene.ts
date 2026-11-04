@@ -298,7 +298,7 @@ export class OfficeScene extends Phaser.Scene {
     }
   }
 
-  // 有對照 frame 且素材載入成功就用 Kenney 圖塊，否則用程式繪製的貼圖（ensureTextures 已先登錄）。
+  // 有對照 frame 且素材載入成功就用素材圖塊（indoor sheet），否則用程式繪製的貼圖（ensureTextures 已先登錄）。
   private tile(x: number, y: number, key: string): Phaser.GameObjects.Image {
     const frame = this.failedSheets.has(KENNEY_SHEETS.indoor.key) ? undefined : OFFICE_TILE_FRAMES[key];
     return frame === undefined ? this.add.image(x, y, key).setOrigin(0) : this.add.image(x, y, KENNEY_SHEETS.indoor.key, frame).setOrigin(0);
@@ -333,7 +333,7 @@ export class OfficeScene extends Phaser.Scene {
  * 建立 Phaser 遊戲並等場景 create 完成；呼叫端以動態 import 載入此模組，Phaser 只在 /office 下載。
  * @param parent 放 canvas 的容器元素，遊戲尺寸會跟著它縮放。
  * @param handlers 場景對外層的回呼。
- * @param onAssetsFailed 素材（Kenney spritesheet）載入失敗時呼叫一次，讓外層提示使用者已改用簡易圖案。
+ * @param onAssetsFailed 素材（indoor 或角色 spritesheet）載入失敗時呼叫一次，讓外層提示使用者已改用簡易圖案。
  * @returns 場景 create 完成後 resolve，附上 game（離開頁面時 destroy）與 scene。
  */
 export function createOfficeGame(parent: HTMLElement, handlers: OfficeSceneHandlers, onAssetsFailed?: () => void): Promise<{ game: Phaser.Game; scene: OfficeScene }> {
