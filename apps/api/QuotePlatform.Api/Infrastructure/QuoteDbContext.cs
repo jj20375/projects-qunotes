@@ -46,6 +46,7 @@ public sealed class QuoteDbContext(DbContextOptions<QuoteDbContext> options, Com
     public DbSet<ProjectShipment> ProjectShipments => Set<ProjectShipment>();
     public DbSet<ProjectWarranty> ProjectWarranties => Set<ProjectWarranty>();
     public DbSet<ProjectInvoice> ProjectInvoices => Set<ProjectInvoice>();
+    public DbSet<ProjectFollowUp> ProjectFollowUps => Set<ProjectFollowUp>();
     public DbSet<OfficeRoom> OfficeRooms => Set<OfficeRoom>();
     public DbSet<OfficeProfile> OfficeProfiles => Set<OfficeProfile>();
 
@@ -209,6 +210,7 @@ public sealed class QuoteDbContext(DbContextOptions<QuoteDbContext> options, Com
         ConfigureQuotes(modelBuilder);
         ConfigureDocuments(modelBuilder);
         ConfigureOffice(modelBuilder);
+        ConfigureFollowUps(modelBuilder);
 
         foreach (var entityType in modelBuilder.Model.GetEntityTypes().Where(value => typeof(ICompanyOwned).IsAssignableFrom(value.ClrType)))
         {
@@ -364,6 +366,44 @@ public sealed class QuoteDbContext(DbContextOptions<QuoteDbContext> options, Com
             entity.HasIndex(value => value.CompanyId);
             entity.HasOne<Company>().WithMany().HasForeignKey(value => value.CompanyId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne<CompanyMembership>().WithMany().HasForeignKey(value => value.MembershipId).OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    /// <summary>專案跟進紀錄。</summary>
+    private static void ConfigureFollowUps(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ProjectFollowUp>(entity =>
+        {
+            entity.ToTable("project_followups", table =>
+            {
+                table.HasComment("專案跟進紀錄（電話、拜訪、會議等客戶互動與下次聯絡日）");
+                table.HasCheckConstraint("CK_project_followups_Type", "Type IN ('call', 'visit', 'meeting', 'email', 'message', 'other')");
+            });
+            entity.HasKey(value => value.Id);
+            entity.Property(value => value.Id).HasComment("跟進紀錄唯一識別碼");
+            entity.Property(value => value.CompanyId).HasComment("所屬公司識別碼");
+            entity.Property(value => value.ProjectId).HasComment("所屬專案識別碼");
+            entity.Property(value => value.Type).HasMaxLength(20).IsRequired().HasComment("類型（call / visit / meeting / email / message / other）");
+            entity.Property(value => value.OccurredAt).HasComment("互動發生時間（UTC）");
+            entity.Property(value => value.ContactId).HasComment("對象聯絡人識別碼；聯絡人刪除時設為 NULL");
+            entity.Property(value => value.ContactName).HasMaxLength(100).HasComment("對象姓名快照");
+            entity.Property(value => value.Summary).HasMaxLength(200).IsRequired().HasComment("主旨");
+            entity.Property(value => value.Content).HasColumnType("text").HasComment("內容");
+            entity.Property(value => value.NextFollowUpOn).HasComment("下次聯絡日（台灣日期）");
+            entity.Property(value => value.NextAction).HasMaxLength(200).HasComment("下次要做的事");
+            entity.Property(value => value.NextDismissedAt).HasComment("按「不用跟進」的時間（UTC）；NULL 表示仍需提醒");
+            entity.Property(value => value.NextDismissedBy).HasComment("按「不用跟進」的使用者識別碼");
+            entity.Property(value => value.CreatedBy).HasComment("撰寫者使用者識別碼");
+            entity.Property(value => value.CreatedAt).HasComment("建立時間戳記（UTC）");
+            entity.Property(value => value.UpdatedBy).HasComment("最後修改者使用者識別碼；未修改過為 NULL");
+            entity.Property(value => value.UpdatedAt).HasComment("最後更新時間戳記（UTC）");
+            entity.Property(value => value.IsDeleted).HasComment("是否已軟刪除");
+            entity.Property(value => value.DeletedAt).HasComment("軟刪除時間戳記（UTC）");
+            entity.HasIndex(value => new { value.CompanyId, value.ProjectId, value.IsDeleted, value.OccurredAt });
+            entity.HasIndex(value => new { value.CompanyId, value.OccurredAt });
+            entity.HasOne<Company>().WithMany().HasForeignKey(value => value.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Project>().WithMany().HasForeignKey(value => value.ProjectId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ClientContact>().WithMany().HasForeignKey(value => value.ContactId).OnDelete(DeleteBehavior.SetNull);
         });
     }
 
@@ -545,6 +585,9 @@ public sealed class QuoteDbContext(DbContextOptions<QuoteDbContext> options, Com
             entity.HasIndex(value => new { value.CompanyId, value.ClientId });
             entity.HasIndex(value => new { value.CompanyId, value.DepartmentId });
             entity.HasIndex(value => new { value.CompanyId, value.OwnerUserId });
+            entity.Property(value => value.LastFollowUpAt).HasComment("最新一筆跟進紀錄的發生時間（UTC）；由跟進紀錄重算");
+            entity.Property(value => value.NextFollowUpOn).HasComment("下次聯絡日（台灣日期）；最新一筆未填或已按不用跟進時為 NULL");
+            entity.HasIndex(value => new { value.CompanyId, value.NextFollowUpOn });
             entity.HasOne<Company>().WithMany().HasForeignKey(value => value.CompanyId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(value => value.Client).WithMany().HasForeignKey(value => value.ClientId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Department>().WithMany().HasForeignKey(value => value.DepartmentId).OnDelete(DeleteBehavior.SetNull);

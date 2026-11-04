@@ -82,6 +82,7 @@
 | company | `clients` | `/clients` | `import`：匯入、`export`：匯出 |
 | company | `products` | `/products` | `import`：匯入 |
 | company | `projects` | `/projects` | `assign_member`：指定成員、`close`：結案、`export`：匯出 |
+| company | `followups` | `/followups` | — |
 | company | `quotes` | `/quotes` | `import_excel`：範本匯入、`import_legacy`：舊報價匯入、`import_ocr`：圖像識別、`export_pdf`：PDF、`export_excel`：Excel、`approve`：核准、`view_cost`：檢視成本與毛利 |
 | company | `orders` | `/projects/:id/orders` | `download`：下載附件（出貨單沿用此權限） |
 | company | `warranties` | `/projects/:id/warranties` | `download`：下載附件 |
@@ -95,6 +96,10 @@
 
 既有公司角色（系統與自訂）由 Seeder 一次性補上 `office:read`：以 `audit_logs` 的 `permission.default_granted` 紀錄（`EntityId` 為該權限的 Id）當標記，沒有這筆紀錄才處理；即使沒有任何角色需要補授權（例如全新資料庫）也寫入標記，所以管理員日後收回的授權不會被補回。授權、相關使用者的 `AuthVersion` 遞增與標記在同一個交易內完成。部署這個版本時必須執行一次 Seeder（`--seed-only` 或 `BOOTSTRAP_ON_START=true`），否則既有角色看不到虛擬辦公室。
 
+`followups` 跟進紀錄掛在專案下，可見範圍完全繼承專案（`ProjectAccessService.VisibleProjects`），沒有另外的規則：業務主管（部門樹）看得到自己部門與下層部門專案的紀錄，公司管理員看全部，業務看自己負責或參與的專案。判斷依據是專案所屬的部門，不是撰寫人的部門。寫入需要對應的 `followups` CRUD 加上專案寫入身分（負責人、成員或資料範圍內的主管），能寫專案的人可以修改、刪除任何人寫的紀錄；已結案專案只能讀。
+
+既有角色的 `followups` 同樣由 Seeder 一次性補上（同一個 `permission.default_granted` 機制）：系統角色依下表（業務、業務主管 CRUD，唯讀 R，會計沒有）；自訂角色比照它對 `projects` 的 CRUD，沒有 `projects:read` 的不補。部署此版本時必須執行一次 Seeder。
+
 權限版本變更對辦公室連線的影響：`AuthVersion` 遞增時（改角色權限、部門等），hub 連線收到 `ReauthRequired` 後斷線，前端以 refresh token 換發新 token 再重連，使用者不會被登出，與 REST 收到 401 時的行為一致；帳號、成員身分或公司被停用則送 `ForceDisconnect`，前端登出且不重連。
 
 ### 3.3 內建角色
@@ -103,8 +108,8 @@
 |---|---|---|---|
 | `platform-admin` | platform | — | 全部 platform 權限，可切換到任一公司 |
 | `company-admin` | company | company | 公司內全部權限，也是公司角色上限 |
-| `sales-manager` | company | department_tree | 客戶、專案、報價（含 approve、view_cost）、訂單、保固、發票讀取、Dashboard 全員、虛擬辦公室（`office:read`） |
-| `sales` | company | own | 客戶、專案、報價（不含 approve）、訂單、保固讀寫、Dashboard 自己、虛擬辦公室（`office:read`） |
+| `sales-manager` | company | department_tree | 客戶、專案、報價（含 approve、view_cost）、訂單、保固、發票讀取、Dashboard 全員、跟進紀錄讀寫、虛擬辦公室（`office:read`） |
+| `sales` | company | own | 客戶、專案、報價（不含 approve）、訂單、保固讀寫、Dashboard 自己、跟進紀錄讀寫、虛擬辦公室（`office:read`） |
 | `accountant` | company | company | 專案讀取、訂單、發票（含 mark_paid、void）、Dashboard 金額、虛擬辦公室（`office:read`） |
 | `viewer` | company | own | 全部唯讀（含虛擬辦公室） |
 

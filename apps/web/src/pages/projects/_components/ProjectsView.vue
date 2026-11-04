@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * @component ProjectsView
- * 專案搜尋：狀態（多選，顯示各狀態筆數）、時間（建立／開工／完工日）、金額（預估／成交）、客戶、負責人、只看我的。
+ * 專案搜尋：狀態（多選，顯示各狀態筆數）、時間（建立／開工／完工日）、金額（預估／成交）、客戶、負責人、只看我的、跟進狀態（待跟進／已逾期／沒有下次聯絡）。
  * 結果只包含目前資料範圍看得到的專案；條件同步到網址，方便分享或從客戶列表帶入。
  */
 import { computed, reactive, ref } from 'vue';
@@ -12,12 +12,14 @@ import ClientSelect from '@/app/components/ClientSelect.vue';
 import DataTable, { type TableChange } from '@/app/components/DataTable.vue';
 import UserSelect from '@/app/components/UserSelect.vue';
 import { useMe } from '@/app/composables/use-me';
+import { FOLLOW_UP_FILTERS, followUpDue, type FollowUpFilter } from '@/shared/services/followup-service';
 import { searchProjectsApi, type ProjectRow, type ProjectSearchQuery } from '@/shared/services/business-service';
 import { dataColumns, type SortingState } from '@/shared/table/data-table';
 import { formatMoney, PROJECT_STATUSES, projectStatusColor, projectStatusLabel } from '@/shared/types/business';
 import ProjectFormModal from './ProjectFormModal.vue';
 
 const { can } = useMe();
+const canFollowUps = can('followups');
 const initial = new URLSearchParams(window.location.search);
 
 const filters = reactive({
@@ -31,6 +33,7 @@ const filters = reactive({
   clientId: initial.get('clientId') ?? undefined,
   ownerUserId: initial.get('ownerUserId') ?? undefined,
   mine: initial.get('mine') === 'true',
+  followUp: (initial.get('followUp') ?? undefined) as FollowUpFilter | undefined,
 });
 const paging = reactive({ page: 1, pageSize: 20, sort: 'createdAt', desc: true });
 /** 關鍵字按 Enter／搜尋才套用，避免每打一個字就查詢一次。 */
@@ -48,6 +51,7 @@ const query = computed<ProjectSearchQuery>(() => ({
   clientId: filters.clientId,
   ownerUserId: filters.ownerUserId,
   mine: filters.mine || undefined,
+  followUp: filters.followUp,
   ...paging,
 }));
 
@@ -73,7 +77,7 @@ function toggleStatus(status: string, checked: boolean) {
 
 function reset() {
   keywordInput.value = '';
-  Object.assign(filters, { keyword: '', status: [], dateField: 'created', range: [], amountField: 'expected', amountMin: null, amountMax: null, clientId: undefined, ownerUserId: undefined, mine: false });
+  Object.assign(filters, { keyword: '', status: [], dateField: 'created', range: [], amountField: 'expected', amountMin: null, amountMax: null, clientId: undefined, ownerUserId: undefined, mine: false, followUp: undefined });
   onFilterChange();
 }
 
@@ -94,6 +98,7 @@ const columns = [
   col.accessor('name', { header: '專案名稱', enableSorting: true }),
   col.accessor((row) => row.client.name, { id: 'client', header: '客戶', meta: { width: 180 } }),
   col.accessor('status', { header: '狀態', meta: { width: 90 } }),
+  ...(canFollowUps ? [col.accessor('nextFollowUpOn', { header: '下次聯絡', enableSorting: true, meta: { width: 120 } })] : []),
   col.accessor((row) => row.owner.displayName, { id: 'owner', header: '負責人', meta: { width: 100 } }),
   col.accessor('departmentName', { header: '部門', meta: { width: 100 } }),
   col.accessor('startDate', { header: '工期', enableSorting: true, meta: { width: 190 } }),
@@ -129,13 +134,16 @@ function onCreated(id: string) {
         <a-col :xs="24" :md="3" class="mine">
           <a-checkbox v-model:checked="filters.mine" @change="onFilterChange">只看我的</a-checkbox>
         </a-col>
-        <a-col :xs="24" :md="10">
+        <a-col :xs="24" :md="8">
           <a-input-group compact class="compact">
             <a-select v-model:value="filters.dateField" style="width: 110px" :options="[{ value: 'created', label: '建立日' }, { value: 'start', label: '開工日' }, { value: 'end', label: '完工日' }]" @change="onFilterChange" />
             <a-range-picker v-model:value="filters.range" style="width: calc(100% - 110px)" @change="onFilterChange" />
           </a-input-group>
         </a-col>
-        <a-col :xs="24" :md="11">
+        <a-col v-if="canFollowUps" :xs="24" :md="6">
+          <a-select v-model:value="filters.followUp" :options="FOLLOW_UP_FILTERS" allow-clear placeholder="跟進狀態" style="width: 100%" @change="onFilterChange" />
+        </a-col>
+        <a-col :xs="24" :md="7">
           <a-input-group compact class="compact">
             <a-select v-model:value="filters.amountField" style="width: 110px" :options="[{ value: 'expected', label: '預估金額' }, { value: 'contract', label: '成交金額' }]" @change="onFilterChange" />
             <a-input-number v-model:value="filters.amountMin" :min="0" placeholder="最低" style="width: calc((100% - 110px) / 2)" @change="onFilterChange" />
@@ -175,7 +183,7 @@ function onCreated(id: string) {
         :loading="projects.isFetching.value"
         :pagination="{ page: paging.page, pageSize: paging.pageSize, total: projects.data.value?.total ?? 0, showSizeChanger: true }"
         :sorting="sorting"
-        :scroll-x="1300"
+        :scroll-x="1420"
         @change="onTableChange"
       >
         <template #cell="{ columnId, record }">
@@ -187,6 +195,13 @@ function onCreated(id: string) {
           </template>
           <template v-else-if="columnId === 'status'">
             <a-tag :color="projectStatusColor(record.status)">{{ projectStatusLabel(record.status) }}</a-tag>
+          </template>
+          <template v-else-if="columnId === 'nextFollowUpOn'">
+            <template v-if="record.nextFollowUpOn">
+              <span :class="['due', followUpDue(record.nextFollowUpOn, record.status).state]">{{ record.nextFollowUpOn }}</span>
+              <a-tag v-if="followUpDue(record.nextFollowUpOn, record.status).state === 'today'" color="orange" class="today">今天</a-tag>
+            </template>
+            <span v-else class="muted">—</span>
           </template>
           <template v-else-if="columnId === 'startDate'">
             <span v-if="record.startDate || record.endDate">{{ record.startDate ?? '?' }} ~ {{ record.endDate ?? '?' }}</span>
@@ -218,6 +233,16 @@ function onCreated(id: string) {
 }
 .muted {
   color: #bbb;
+}
+.due.overdue {
+  color: #cf1322;
+  font-weight: 500;
+}
+.due.inactive {
+  color: #bbb;
+}
+.today {
+  margin-left: 4px;
 }
 .compact {
   display: flex !important;

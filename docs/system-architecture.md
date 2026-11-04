@@ -226,6 +226,16 @@ flowchart LR
 - Nginx 另設獨立的 `location /api/hubs/`（`infra/nginx/default.conf`）：WebSocket upgrade、`access_log off`（token 在 query string）。
 - 既有公司角色的 `office:read` 由 Seeder 一次性補上，部署此版本時必須執行一次 Seeder（見 `docs/permissions-and-data-scope.md` 3.2）。
 
+### 6.9 專案跟進紀錄
+
+- 規格：`docs/superpowers/specs/2026-11-04-project-followups-design.md`。
+- `project_followups` 掛在專案下（電話、拜訪、會議、Email、訊息、其他），可見範圍完全繼承專案：主管依資料範圍看得到部屬專案的紀錄，判斷依據是專案所屬部門。寫入需要 `followups` CRUD 加專案寫入身分；已結案專案只能讀。
+- 「最新一筆」依 `OccurredAt`（同時間比 `CreatedAt`）判斷，補登較早的紀錄不會蓋掉後來的下次聯絡。`projects.LastFollowUpAt`、`projects.NextFollowUpOn` 是依最新一筆重算的快取，只由 `FollowUpService` 在同一交易內以單一 `ExecuteUpdateAsync`（UPDATE + 子查詢）寫入；寫入前先鎖住專案列，同專案的寫入會排隊序列化，不會死結也不會算出過期狀態。寫了新的一筆，前一筆的待辦自然結束；「不用跟進」只作用在最新一筆。
+- 待跟進不含未得標、已結案、已取消的專案（日期保留）；逾期以台灣時間的今天為準。
+- API：`GET /api/followups`（跨專案總表）、`GET|POST /api/projects/{id}/followups`、`GET /api/projects/{id}/followups/contacts`（以專案範圍授權，因客戶依客戶部門判斷可見範圍）、`PUT|DELETE /api/followups/{id}`、`POST /api/projects/{id}/followups/dismiss-next`；專案列表支援 `followUp=pending|overdue|none` 與 `sort=nextFollowUpOn|lastFollowUpAt`。沒有 `followups:read` 時專案的跟進欄位為 null，篩選與排序被忽略。
+- 前端：專案詳細頁「跟進紀錄」頁籤（`tab=followups` 可直接開啟）、專案列表「下次聯絡」欄與跟進狀態篩選、`/followups` 總表頁。
+- 既有角色的 `followups` 由 Seeder 一次性補上，部署此版本時必須執行一次 Seeder（見 `docs/permissions-and-data-scope.md`）。
+
 ## 7. 主要 API
 
 ### 7.0.1 表格元件（DataTable）
@@ -236,7 +246,7 @@ flowchart LR
 |---|---|
 | 欄位 | `dataColumns<Row>()` 建立：`col.accessor('name', { header, enableSorting, meta: { width, align, fixed } })`、`col.display({ id: 'actions', header: '' })`；巢狀欄位用 `col.accessor((row) => row.client.name, { id: 'client', header })` |
 | 後端分頁 | `:pagination="{ page, pageSize, total, showSizeChanger, showTotal }"`，`@change` 收到 `{ page, pageSize, sort, desc }` 後重新查詢 |
-| 後端排序 | 欄位加 `enableSorting: true`，`:sorting="[{ id, desc }]"` 顯示目前排序；整個表頭儲存格可點，鍵盤用裡面的按鈕 |
+| 後端排序 | 欄位加 `enableSorting: true`，`:sorting="[{ id, desc }]"` 顯示目前排序；整個表頭儲存格可點，鍵盤用裡面的按鈕；點擊在升冪與降冪之間切換，不會取消排序 |
 | 自訂儲存格 | `#cell="{ columnId, record, value, index }"`；沒輸出內容的欄位自動顯示欄位值 |
 | 展開列 | 提供 `#expanded="{ record }"` slot，每列左邊出現展開鈕（訂單、出貨、保固、發票的附件） |
 | 勾選列 | `v-model:selected-keys`（列的 row-key 陣列）：左邊出現勾選欄，表頭可勾整頁；已勾選的 key 由頁面保留，可跨頁勾選；`row-selectable` 決定哪些列不能勾（選專案成員的名單） |

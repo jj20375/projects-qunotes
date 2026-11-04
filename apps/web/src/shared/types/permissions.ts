@@ -20,6 +20,7 @@ export type PermissionCode =
   | 'clients'
   | 'products'
   | 'projects'
+  | 'followups'
   | 'quotes'
   | 'orders'
   | 'warranties'

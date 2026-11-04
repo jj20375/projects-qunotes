@@ -20,6 +20,7 @@ using QuotePlatform.Api.Modules.Administration;
 using QuotePlatform.Api.Modules.Clients;
 using QuotePlatform.Api.Modules.Dashboard;
 using QuotePlatform.Api.Modules.Files;
+using QuotePlatform.Api.Modules.FollowUps;
 using QuotePlatform.Api.Modules.Identity;
 using QuotePlatform.Api.Modules.Office;
 using QuotePlatform.Api.Modules.ProjectDocuments;
@@ -50,6 +51,8 @@ if (args.SequenceEqual(["--self-test"]))
     OfficeMapGenerator.AssertExamples();
     OfficeRules.AssertExamples();
     PresenceTracker.AssertExamples();
+    QuoteSeeder.AssertExistingRoleDefaults();
+    FollowUpRules.AssertExamples();
     Console.WriteLine("self-test passed");
     return;
 }
@@ -124,6 +127,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<PresenceTracker>();
 builder.Services.AddSingleton<RateGate>();
 builder.Services.AddScoped<OfficeService>();
+builder.Services.AddScoped<FollowUpService>();
 builder.Services.AddSingleton<OfficeConnections>();
 builder.Services.AddHostedService<OfficeSweeper>();
 builder.Services.AddSignalR(options =>

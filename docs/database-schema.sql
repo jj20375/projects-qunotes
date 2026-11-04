@@ -394,6 +394,8 @@ CREATE TABLE projects (
   Description     TEXT          NULL COMMENT '專案說明或目標描述',
   WonAt           DATETIME(6)   NULL COMMENT '得標成交確認時間戳記',
   ClosedAt        DATETIME(6)   NULL COMMENT '結案時間戳記',
+  LastFollowUpAt  DATETIME(6)   NULL COMMENT '最新一筆跟進紀錄的發生時間（UTC）；由跟進紀錄重算',
+  NextFollowUpOn  DATE          NULL COMMENT '下次聯絡日（台灣日期）；最新一筆未填或已按不用跟進時為 NULL',
   CreatedBy       CHAR(36)      NOT NULL COMMENT '建立者使用者識別碼',
   CreatedAt       DATETIME(6)   NOT NULL COMMENT '建立時間戳記（UTC）',
   UpdatedBy       CHAR(36)      NULL COMMENT '最後更新者使用者識別碼',
@@ -410,6 +412,7 @@ CREATE TABLE projects (
   KEY IX_projects_CompanyId_ClientId (CompanyId, ClientId),
   KEY IX_projects_CompanyId_DepartmentId (CompanyId, DepartmentId),
   KEY IX_projects_CompanyId_OwnerUserId (CompanyId, OwnerUserId),
+  KEY IX_projects_CompanyId_NextFollowUpOn (CompanyId, NextFollowUpOn),
   CONSTRAINT FK_projects_companies FOREIGN KEY (CompanyId) REFERENCES companies (Id) ON DELETE RESTRICT,
   CONSTRAINT FK_projects_clients FOREIGN KEY (ClientId) REFERENCES clients (Id) ON DELETE RESTRICT,
   CONSTRAINT FK_projects_departments FOREIGN KEY (DepartmentId) REFERENCES departments (Id) ON DELETE SET NULL,
@@ -772,7 +775,42 @@ CREATE TABLE office_profiles (
 ) ENGINE=InnoDB COMMENT='成員虛擬辦公室個人設定檔';
 
 -- =========================================================
--- 8. 循環關聯：表都建立後再補 FK
+-- 8. 專案跟進紀錄
+-- =========================================================
+
+CREATE TABLE project_followups (
+  Id              CHAR(36)      NOT NULL COMMENT '跟進紀錄唯一識別碼',
+  CompanyId       CHAR(36)      NOT NULL COMMENT '所屬公司識別碼',
+  ProjectId       CHAR(36)      NOT NULL COMMENT '所屬專案識別碼',
+  Type            VARCHAR(20)   NOT NULL COMMENT '類型（call / visit / meeting / email / message / other）',
+  OccurredAt      DATETIME(6)   NOT NULL COMMENT '互動發生時間（UTC）',
+  ContactId       CHAR(36)      NULL COMMENT '對象聯絡人識別碼；聯絡人刪除時設為 NULL',
+  ContactName     VARCHAR(100)  NULL COMMENT '對象姓名快照',
+  Summary         VARCHAR(200)  NOT NULL COMMENT '主旨',
+  Content         TEXT          NULL COMMENT '內容',
+  NextFollowUpOn  DATE          NULL COMMENT '下次聯絡日（台灣日期）',
+  NextAction      VARCHAR(200)  NULL COMMENT '下次要做的事',
+  NextDismissedAt DATETIME(6)   NULL COMMENT '按「不用跟進」的時間（UTC）；NULL 表示仍需提醒',
+  NextDismissedBy CHAR(36)      NULL COMMENT '按「不用跟進」的使用者識別碼',
+  CreatedBy       CHAR(36)      NOT NULL COMMENT '撰寫者使用者識別碼',
+  CreatedAt       DATETIME(6)   NOT NULL COMMENT '建立時間戳記（UTC）',
+  UpdatedBy       CHAR(36)      NULL COMMENT '最後修改者使用者識別碼；未修改過為 NULL',
+  UpdatedAt       DATETIME(6)   NOT NULL COMMENT '最後更新時間戳記（UTC）',
+  IsDeleted       TINYINT(1)    NOT NULL DEFAULT 0 COMMENT '是否已軟刪除',
+  DeletedAt       DATETIME(6)   NULL COMMENT '軟刪除時間戳記（UTC）',
+  PRIMARY KEY (Id),
+  KEY IX_project_followups_CompanyId_ProjectId_IsDeleted_OccurredAt (CompanyId, ProjectId, IsDeleted, OccurredAt),
+  KEY IX_project_followups_CompanyId_OccurredAt (CompanyId, OccurredAt),
+  KEY IX_project_followups_ContactId (ContactId),
+  KEY IX_project_followups_ProjectId (ProjectId),
+  CONSTRAINT FK_project_followups_companies_CompanyId FOREIGN KEY (CompanyId) REFERENCES companies (Id) ON DELETE RESTRICT,
+  CONSTRAINT FK_project_followups_projects_ProjectId FOREIGN KEY (ProjectId) REFERENCES projects (Id) ON DELETE RESTRICT,
+  CONSTRAINT FK_project_followups_client_contacts_ContactId FOREIGN KEY (ContactId) REFERENCES client_contacts (Id) ON DELETE SET NULL,
+  CONSTRAINT CK_project_followups_Type CHECK (Type IN ('call', 'visit', 'meeting', 'email', 'message', 'other'))
+) ENGINE=InnoDB COMMENT='專案跟進紀錄（電話、拜訪、會議等客戶互動與下次聯絡日）';
+
+-- =========================================================
+-- 9. 循環關聯：表都建立後再補 FK
 -- =========================================================
 
 ALTER TABLE companies

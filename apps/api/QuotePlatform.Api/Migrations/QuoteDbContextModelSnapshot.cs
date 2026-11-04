@@ -979,10 +979,18 @@ namespace QuotePlatform.Api.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("tinyint(1)");
 
+                    b.Property<DateTimeOffset?>("LastFollowUpAt")
+                        .HasColumnType("datetime(6)")
+                        .HasComment("最新一筆跟進紀錄的發生時間（UTC）；由跟進紀錄重算");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("varchar(200)");
+
+                    b.Property<DateOnly?>("NextFollowUpOn")
+                        .HasColumnType("date")
+                        .HasComment("下次聯絡日（台灣日期）；最新一筆未填或已按不用跟進時為 NULL");
 
                     b.Property<Guid>("OwnerUserId")
                         .HasColumnType("char(36)");
@@ -1027,6 +1035,8 @@ namespace QuotePlatform.Api.Migrations
 
                     b.HasIndex("CompanyId", "ExpectedAmount");
 
+                    b.HasIndex("CompanyId", "NextFollowUpOn");
+
                     b.HasIndex("CompanyId", "OwnerUserId");
 
                     b.HasIndex("CompanyId", "ProjectNo")
@@ -1037,6 +1047,109 @@ namespace QuotePlatform.Api.Migrations
                     b.HasIndex("CompanyId", "Status", "CreatedAt");
 
                     b.ToTable("projects", (string)null);
+                });
+
+            modelBuilder.Entity("QuotePlatform.Api.Infrastructure.ProjectFollowUp", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)")
+                        .HasComment("跟進紀錄唯一識別碼");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("char(36)")
+                        .HasComment("所屬公司識別碼");
+
+                    b.Property<Guid?>("ContactId")
+                        .HasColumnType("char(36)")
+                        .HasComment("對象聯絡人識別碼；聯絡人刪除時設為 NULL");
+
+                    b.Property<string>("ContactName")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)")
+                        .HasComment("對象姓名快照");
+
+                    b.Property<string>("Content")
+                        .HasColumnType("text")
+                        .HasComment("內容");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)")
+                        .HasComment("建立時間戳記（UTC）");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("char(36)")
+                        .HasComment("撰寫者使用者識別碼");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetime(6)")
+                        .HasComment("軟刪除時間戳記（UTC）");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("tinyint(1)")
+                        .HasComment("是否已軟刪除");
+
+                    b.Property<string>("NextAction")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)")
+                        .HasComment("下次要做的事");
+
+                    b.Property<DateTimeOffset?>("NextDismissedAt")
+                        .HasColumnType("datetime(6)")
+                        .HasComment("按「不用跟進」的時間（UTC）；NULL 表示仍需提醒");
+
+                    b.Property<Guid?>("NextDismissedBy")
+                        .HasColumnType("char(36)")
+                        .HasComment("按「不用跟進」的使用者識別碼");
+
+                    b.Property<DateOnly?>("NextFollowUpOn")
+                        .HasColumnType("date")
+                        .HasComment("下次聯絡日（台灣日期）");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("datetime(6)")
+                        .HasComment("互動發生時間（UTC）");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("char(36)")
+                        .HasComment("所屬專案識別碼");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)")
+                        .HasComment("主旨");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)")
+                        .HasComment("類型（call / visit / meeting / email / message / other）");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetime(6)")
+                        .HasComment("最後更新時間戳記（UTC）");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("char(36)")
+                        .HasComment("最後修改者使用者識別碼；未修改過為 NULL");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContactId");
+
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("CompanyId", "OccurredAt");
+
+                    b.HasIndex("CompanyId", "ProjectId", "IsDeleted", "OccurredAt");
+
+                    b.ToTable("project_followups", null, t =>
+                        {
+                            t.HasComment("專案跟進紀錄（電話、拜訪、會議等客戶互動與下次聯絡日）");
+
+                            t.HasCheckConstraint("CK_project_followups_Type", "Type IN ('call', 'visit', 'meeting', 'email', 'message', 'other')");
+                        });
                 });
 
             modelBuilder.Entity("QuotePlatform.Api.Infrastructure.ProjectInvoice", b =>
@@ -2224,6 +2337,26 @@ namespace QuotePlatform.Api.Migrations
                     b.Navigation("Client");
 
                     b.Navigation("Owner");
+                });
+
+            modelBuilder.Entity("QuotePlatform.Api.Infrastructure.ProjectFollowUp", b =>
+                {
+                    b.HasOne("QuotePlatform.Api.Infrastructure.Company", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("QuotePlatform.Api.Infrastructure.ClientContact", null)
+                        .WithMany()
+                        .HasForeignKey("ContactId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("QuotePlatform.Api.Infrastructure.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("QuotePlatform.Api.Infrastructure.ProjectInvoice", b =>

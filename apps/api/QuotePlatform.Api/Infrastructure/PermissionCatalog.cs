@@ -42,6 +42,7 @@ public static class PermissionCatalog
         new("clients", "客戶", "company", "business", "/clients", [("import", "匯入"), ("export", "匯出")]),
         new("products", "品項價目", "company", "business", "/products", [("import", "匯入")]),
         new("projects", "專案", "company", "business", "/projects", [("assign_member", "指定成員"), ("close", "結案"), ("export", "匯出")]),
+        new("followups", "跟進紀錄", "company", "business", "/followups", []),
         new("quotes", "報價單", "company", "business", "/quotes",
         [
             ("import_excel", "Excel 範本匯入"), ("import_legacy", "舊報價匯入"), ("import_ocr", "圖像識別匯入"),
@@ -81,6 +82,7 @@ public static class PermissionCatalog
             Allow("clients", "CRUD", "import", "export"),
             Allow("products", "R"),
             Allow("projects", "CRUD", "assign_member", "close", "export"),
+            Allow("followups", "CRUD"),
             Full("quotes"),
             Allow("orders", "CRU", "download"),
             Allow("warranties", "CRU", "download"),
@@ -94,6 +96,7 @@ public static class PermissionCatalog
             Allow("clients", "CRU"),
             Allow("products", "R"),
             Allow("projects", "CRU", "assign_member"),
+            Allow("followups", "CRUD"),
             Allow("quotes", "CRU", "import_excel", "import_legacy", "import_ocr", "export_pdf", "export_excel"),
             Allow("orders", "CRU", "download"),
             Allow("warranties", "CRU", "download"),
@@ -111,7 +114,7 @@ public static class PermissionCatalog
             Allow("invoices", "CRUD", "download", "mark_paid", "void"),
         ]),
         new("viewer", "唯讀", "company", DataScopes.Own, false,
-            new[] { "dashboard", "office", "clients", "products", "projects", "quotes", "orders", "warranties", "invoices" }.Select(code => Allow(code, "R")).ToArray()),
+            new[] { "dashboard", "office", "clients", "products", "projects", "followups", "quotes", "orders", "warranties", "invoices" }.Select(code => Allow(code, "R")).ToArray()),
     ];
 
     /// <summary>供 <c>--self-test</c> 驗證目錄與角色定義的一致性。</summary>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * @component ProjectDetailView
- * 專案明細：基本資料、狀態流程、成員與狀態紀錄，以及報價單、訂單、出貨單、發票、保固單分頁（層級：定案報價 → 訂單 → 出貨／發票／保固）。
+ * 專案明細：基本資料、狀態流程、成員與狀態紀錄，以及跟進紀錄、報價單、訂單、出貨單、發票、保固單分頁（層級：定案報價 → 訂單 → 出貨／發票／保固）。
  * 看不到的專案後端回 404，這裡顯示「找不到專案」，不區分是否存在。
  */
 import { computed, ref } from 'vue';
@@ -18,14 +18,35 @@ import ProjectOrdersTab from './ProjectOrdersTab.vue';
 import ProjectShipmentsTab from './ProjectShipmentsTab.vue';
 import ProjectWarrantiesTab from './ProjectWarrantiesTab.vue';
 import ProjectInvoicesTab from './ProjectInvoicesTab.vue';
+import ProjectFollowUpsTab from './ProjectFollowUpsTab.vue';
+import { followUpDue } from '@/shared/services/followup-service';
 import AttachmentList from '@/app/components/AttachmentList.vue';
 import { useMe } from '@/app/composables/use-me';
 
 const projectId = new URLSearchParams(window.location.search).get('id') ?? '';
+// 總表的連結會帶 tab=followups，直接開到跟進紀錄頁籤。
+const requestedTab = ref(new URLSearchParams(window.location.search).get('tab') ?? 'members');
 const { can } = useMe();
+// 網址的 tab 可能指向沒權限或不存在的頁籤；權限資料載入後會重新計算，所以用 computed 而不是在初始化時判斷一次。
+const tabVisible: Record<string, () => boolean> = {
+  members: () => true,
+  history: () => true,
+  followups: () => can('followups', 'read'),
+  quotes: () => can('quotes', 'read'),
+  orders: () => can('orders', 'read'),
+  shipments: () => can('orders', 'read'),
+  invoices: () => can('invoices', 'read'),
+  warranties: () => can('warranties', 'read'),
+  attachments: () => true,
+};
+const activeTab = computed({
+  get: () => (tabVisible[requestedTab.value]?.() ? requestedTab.value : 'members'),
+  set: (value: string) => { requestedTab.value = value; },
+});
 const project = useQuery({ queryKey: ['project', projectId], queryFn: () => getProjectApi(projectId), enabled: !!projectId, retry: false });
 const notFound = computed(() => !projectId || (project.error.value instanceof ApiError && project.error.value.status === 404));
 const p = computed(() => project.data.value);
+const due = computed(() => followUpDue(p.value?.nextFollowUpOn, p.value?.status));
 
 const editOpen = ref(false);
 const membersOpen = ref(false);
@@ -117,6 +138,14 @@ const roleLabel = computed(() => (p.value?.myRole ? PROJECT_ROLES[p.value.myRole
         <a-descriptions-item label="得標時間">{{ formatDateTime(p.wonAt) }}</a-descriptions-item>
         <a-descriptions-item label="建立時間">{{ formatDateTime(p.createdAt) }}</a-descriptions-item>
         <a-descriptions-item label="最後更新">{{ formatDateTime(p.updatedAt) }}</a-descriptions-item>
+        <a-descriptions-item v-if="can('followups', 'read')" label="下次聯絡">
+          <template v-if="p.nextFollowUpOn">
+            {{ p.nextFollowUpOn }}
+            <a-tag v-if="due.state === 'overdue'" color="red">逾期 {{ -due.days }} 天</a-tag>
+            <a-tag v-else-if="due.state === 'today'" color="orange">今天</a-tag>
+          </template>
+          <span v-else>—</span>
+        </a-descriptions-item>
         <a-descriptions-item v-if="p.summary.orderTotal !== null" label="訂單金額（含稅）">{{ formatMoney(p.summary.orderTotal) }}</a-descriptions-item>
         <a-descriptions-item v-if="p.summary.invoicedTotal !== null" label="已開票 ／ 已收款">
           {{ formatMoney(p.summary.invoicedTotal) }} ／ {{ formatMoney(p.summary.paidTotal) }}
@@ -128,7 +157,7 @@ const roleLabel = computed(() => (p.value?.myRole ? PROJECT_ROLES[p.value.myRole
     </a-card>
 
     <a-card :bordered="false">
-      <a-tabs>
+      <a-tabs v-model:active-key="activeTab">
         <a-tab-pane key="members" :tab="`成員（${p.members.length + 1}）`">
           <div class="tab-toolbar">
             <a-button v-if="p.canManageMembers" @click="membersOpen = true">管理成員</a-button>
@@ -150,6 +179,9 @@ const roleLabel = computed(() => (p.value?.myRole ? PROJECT_ROLES[p.value.myRole
               <div v-if="entry.reason">原因：{{ entry.reason }}</div>
             </a-timeline-item>
           </a-timeline>
+        </a-tab-pane>
+        <a-tab-pane v-if="can('followups', 'read')" key="followups" tab="跟進紀錄">
+          <ProjectFollowUpsTab :project="p" />
         </a-tab-pane>
         <a-tab-pane v-if="can('quotes', 'read')" key="quotes" tab="報價單">
           <ProjectQuotesTab :project="p" />
