@@ -32,7 +32,7 @@ const form = reactive({
   nextAction: '',
 });
 const saving = ref(false);
-const contactOptions = ref<{ value: string; label: string; contactId: string }[]>([]);
+const contactOptions = ref<{ key: string; value: string; label: string; contactId: string }[]>([]);
 const quickNext = [
   { label: '明天', days: 1 },
   { label: '3 天後', days: 3 },
@@ -66,7 +66,9 @@ function searchContacts(keyword: string) {
   contactTimer = setTimeout(async () => {
     try {
       const contacts = await listFollowUpContactsApi(props.projectId, keyword);
+      // 同名聯絡人的 value 相同，選項靠 key 區分；value 維持姓名，選取後才會寫進輸入框。
       contactOptions.value = contacts.map((contact) => ({
+        key: contact.id,
         value: contact.name,
         label: contact.title ? `${contact.name}（${contact.title}）` : contact.name,
         contactId: contact.id,

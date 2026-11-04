@@ -25,8 +25,24 @@ import { useMe } from '@/app/composables/use-me';
 
 const projectId = new URLSearchParams(window.location.search).get('id') ?? '';
 // 總表的連結會帶 tab=followups，直接開到跟進紀錄頁籤。
-const activeTab = ref(new URLSearchParams(window.location.search).get('tab') ?? 'members');
+const requestedTab = ref(new URLSearchParams(window.location.search).get('tab') ?? 'members');
 const { can } = useMe();
+// 網址的 tab 可能指向沒權限或不存在的頁籤；權限資料載入後會重新計算，所以用 computed 而不是在初始化時判斷一次。
+const tabVisible: Record<string, () => boolean> = {
+  members: () => true,
+  history: () => true,
+  followups: () => can('followups', 'read'),
+  quotes: () => can('quotes', 'read'),
+  orders: () => can('orders', 'read'),
+  shipments: () => can('orders', 'read'),
+  invoices: () => can('invoices', 'read'),
+  warranties: () => can('warranties', 'read'),
+  attachments: () => true,
+};
+const activeTab = computed({
+  get: () => (tabVisible[requestedTab.value]?.() ? requestedTab.value : 'members'),
+  set: (value: string) => { requestedTab.value = value; },
+});
 const project = useQuery({ queryKey: ['project', projectId], queryFn: () => getProjectApi(projectId), enabled: !!projectId, retry: false });
 const notFound = computed(() => !projectId || (project.error.value instanceof ApiError && project.error.value.status === 404));
 const p = computed(() => project.data.value);

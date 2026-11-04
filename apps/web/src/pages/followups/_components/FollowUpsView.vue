@@ -130,6 +130,17 @@ const columns = [
     </a-card>
 
     <a-card :bordered="false">
+      <a-alert
+        v-if="list.isError.value"
+        type="error"
+        show-icon
+        style="margin-bottom: 12px"
+        :message="(list.error.value as Error | null)?.message || '跟進紀錄載入失敗'"
+      >
+        <template #action>
+          <a-button size="small" @click="list.refetch()">重新載入</a-button>
+        </template>
+      </a-alert>
       <DataTable
         :data="list.data.value?.items ?? []"
         :columns="columns"
