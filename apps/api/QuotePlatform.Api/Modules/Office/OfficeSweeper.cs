@@ -29,7 +29,8 @@ public sealed class OfficeConnections
 
 /// <summary>
 /// 每 5 秒處理閒置、離線與離開辦公室（寬限期後）並廣播；每 <see cref="QuoteOptions.OfficeAuthSweepSeconds"/> 秒比對一次
-/// AuthVersion、帳號與公司狀態，不一致的連線先送 ForceDisconnect 再斷線。
+/// AuthVersion、帳號、成員身分與公司狀態。帳號、成員身分或公司停用的連線送 ForceDisconnect（前端登出）；
+/// 只有 AuthVersion 變動的連線送 ReauthRequired（前端換發 token 後重連），兩者都接著斷線。
 /// </summary>
 /// <remarks>AuthVersion 巡檢把所有連線合成一次查詢；轉離線時依公司分批寫入 office_profiles.LastSeenAt。</remarks>
 public sealed class OfficeSweeper(
@@ -40,6 +41,9 @@ public sealed class OfficeSweeper(
     IOptions<QuoteOptions> options,
     ILogger<OfficeSweeper> logger) : BackgroundService
 {
+    // IHubContext 送出的訊息先進連線的寫入佇列，Abort 太快會讓最後一則事件來不及送達。
+    private static readonly TimeSpan AbortDelay = TimeSpan.FromMilliseconds(300);
+
     /// <summary>以 5 秒為週期執行巡檢，單次失敗只記錄不中止。</summary>
     /// <param name="stoppingToken">主機關閉時取消。</param>
     /// <returns>巡檢迴圈的工作。</returns>
@@ -98,6 +102,7 @@ public sealed class OfficeSweeper(
         var db = scope.ServiceProvider.GetRequiredService<QuoteDbContext>();
         var userIds = all.Values.Select(value => value.UserId).Distinct().ToList();
         var companyIds = all.Values.Select(value => value.CompanyId).Distinct().ToList();
+        var membershipIds = all.Values.Select(value => value.MembershipId).Distinct().ToList();
         var users = await db.Users.AsNoTracking()
             .Where(value => userIds.Contains(value.Id))
             .Select(value => new { value.Id, value.Status, value.AuthVersion })
@@ -106,15 +111,46 @@ public sealed class OfficeSweeper(
             .Where(value => companyIds.Contains(value.Id) && value.Status == "active")
             .Select(value => value.Id)
             .ToListAsync(cancellationToken)).ToHashSet();
+        // Seeder／背景工作沒有公司範圍，成員身分表要略過公司過濾才查得到。
+        var activeMemberships = (await db.CompanyMemberships.IgnoreQueryFilters().AsNoTracking()
+            .Where(value => membershipIds.Contains(value.Id) && value.IsActive)
+            .Select(value => value.Id)
+            .ToListAsync(cancellationToken)).ToHashSet();
+
+        var revoked = new List<string>();
+        var stale = new List<string>();
         foreach (var (connectionId, identity) in all)
         {
-            var valid = users.TryGetValue(identity.UserId, out var user)
-                && user.Status == "active"
-                && user.AuthVersion == identity.AuthVersion
-                && activeCompanies.Contains(identity.CompanyId);
-            if (valid) continue;
-            await hub.Clients.Client(connectionId).ForceDisconnect("登入權限已更新，請重新登入。");
-            connections.Abort(connectionId);
+            if (!users.TryGetValue(identity.UserId, out var user)
+                || user.Status != "active"
+                || !activeCompanies.Contains(identity.CompanyId)
+                || !activeMemberships.Contains(identity.MembershipId))
+            {
+                revoked.Add(connectionId);
+            }
+            else if (user.AuthVersion != identity.AuthVersion)
+            {
+                stale.Add(connectionId);
+            }
+        }
+        if (revoked.Count == 0 && stale.Count == 0) return;
+
+        // 版本變更不等於登出：REST 的 401 會默默換發 token，所以這裡只要求前端換發後重連。
+        foreach (var connectionId in revoked) await TrySendAsync(connectionId, client => client.ForceDisconnect("帳號或公司已停用，請重新登入。"));
+        foreach (var connectionId in stale) await TrySendAsync(connectionId, client => client.ReauthRequired());
+        await Task.Delay(AbortDelay, cancellationToken);
+        foreach (var connectionId in revoked.Concat(stale)) connections.Abort(connectionId);
+    }
+
+    private async Task TrySendAsync(string connectionId, Func<IOfficeClient, Task> send)
+    {
+        try
+        {
+            await send(hub.Clients.Client(connectionId));
+        }
+        catch (Exception error)
+        {
+            logger.LogWarning(error, "通知連線 {ConnectionId} 失敗，仍會斷線。", connectionId);
         }
     }
 }

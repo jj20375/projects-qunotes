@@ -1,6 +1,6 @@
 /**
  * 虛擬辦公室端對端驗證：hub 連線權限、公司隔離、走動、靠近聊天、敲門、表情、狀態、
- * 停用帳號斷線與離線寬限期。
+ * 權限版本變更（ReauthRequired，不登出）、停用帳號（ForceDisconnect）與離線寬限期。共 11 項。
  *
  * 前置：API 以 Quote__LoginCaptchaEnabled=false、Quote__OfficeAuthSweepSeconds=5 啟動，且已執行 Seeder（SeedDemoData=true）。
  * 用法：node tests/office-smoke.mjs [baseUrl]
@@ -135,6 +135,9 @@ let hubA;
 let hubB;
 let hubX;
 let snapshotA;
+let salesRoleId;
+let viewerRoleId;
+let createMember;
 
 await step('準備：專屬測試部門的兩位新成員與另一家公司', async () => {
   demoAdmin = await login('demo-admin');
@@ -147,7 +150,9 @@ await step('準備：專屬測試部門的兩位新成員與另一家公司', as
   sales = { id: createdDepartment.data.id };
   const roles = (await call('GET', '/api/admin/roles', { token: demoAdmin.token })).data;
   const salesRole = roles.find((role) => role.code === 'sales');
-  const createMember = async (prefix, roleId) => {
+  salesRoleId = salesRole.id;
+  viewerRoleId = roles.find((role) => role.code === 'viewer').id;
+  createMember = async (prefix, roleId) => {
     const account = `${prefix}-${suffix}`;
     const created = await call('POST', '/api/admin/users', { token: demoAdmin.token, body: { account, displayName: account, password: seedPassword, departmentId: sales.id, roleId } });
     assert.equal(created.status, 201, JSON.stringify(created.data));
@@ -251,8 +256,27 @@ await step('沒有 office 權限的角色無法建立連線，也不能讀房間
   assert.equal((await call('GET', '/api/office/rooms', { token: memberC.token })).status, 403);
 });
 
-await step('停用帳號後，連線在巡檢週期內被斷開並離開辦公室', async () => {
+await step('權限版本變更：收到 ReauthRequired（不是 ForceDisconnect）後斷線，重新取得 token 即可再連線', async () => {
+  const memberD = await createMember('od', salesRoleId);
+  const hubD = await HubClient.open(memberD.token);
+  await hubD.invoke('JoinOffice', sales.id);
+  // 改角色會遞增 users.AuthVersion；REST 對這種情況只是 401 後換發，辦公室連線也不該把人登出。
+  assert.equal((await call('PATCH', `/api/admin/users/${memberD.membershipId}`, { token: demoAdmin.token, body: { roleId: viewerRoleId } })).status, 200);
+  await hubD.waitFor('ReauthRequired', () => true, sweepWaitMs);
+  await hubD.waitClosed(5000);
+  assert.ok(!hubD.events.some((event) => event.target === 'ForceDisconnect'), '權限版本變更不應收到 ForceDisconnect');
+  assert.equal((await call('GET', '/api/office/rooms', { token: memberD.token })).status, 401, '舊 token 的權限版本已過時');
+  const renewed = await login(`od-${suffix}`);
+  const reconnected = await HubClient.open(renewed.token);
+  const snapshot = await reconnected.invoke('JoinOffice', sales.id);
+  assert.equal(snapshot.me.membershipId, memberD.membershipId);
+  reconnected.close();
+});
+
+await step('停用帳號後，先收到 ForceDisconnect，連線在巡檢週期內被斷開並離開辦公室', async () => {
   assert.equal((await call('PATCH', `/api/admin/users/${memberB.membershipId}`, { token: demoAdmin.token, body: { isActive: false } })).status, 200);
+  // 伺服器送出事件後等一小段才斷線，事件一定會先到；若這裡變得不穩，代表送達與斷線的順序被改壞了。
+  await hubB.waitFor('ForceDisconnect', () => true, sweepWaitMs);
   await hubB.waitClosed(sweepWaitMs);
   await hubA.waitFor('OccupantLeft', (id) => id === memberB.membershipId, 30_000);
 });

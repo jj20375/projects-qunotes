@@ -169,7 +169,7 @@ export const getPresenceApi = () => apiRequest<PresenceEntry[]>('/api/office/pre
 export const updateRoomThemeApi = (departmentId: string, theme: string) =>
   apiRequest<void>(`/api/office/rooms/${departmentId}/theme`, { method: 'PUT', body: { theme } });
 
-/** 重連間隔（毫秒）：0、2、5、10 秒，之後每 30 秒一次，不放棄；自動重連與 use-presence 的重新啟動共用。 */
+/** 重連間隔（毫秒）：0、2、5、10 秒，之後每 30 秒一次，不放棄；由 use-presence 的重新啟動使用。 */
 export const RETRY_DELAYS = [0, 2_000, 5_000, 10_000];
 /** RETRY_DELAYS 用完之後的固定重試間隔（毫秒）。 */
 export const RETRY_FALLBACK_DELAY = 30_000;
@@ -178,7 +178,8 @@ let connection: HubConnection | null = null;
 
 /**
  * 取得全後台共用的 hub 連線（多頁靜態站，每次換頁重建，由後端的 15 秒寬限期吸收）。
- * 後端在 access token 到期時會主動關閉連線，所以自動重連加 accessTokenFactory 換發是正常流程。
+ * 後端在 access token 到期時會主動關閉連線，所以重新連線時由 accessTokenFactory 換發是正常流程。
+ * 不使用 SignalR 內建的自動重連：重連前要先處理 token 版本與權限（見 use-presence），統一由 use-presence 重新啟動。
  * @returns 尚未啟動的單例 HubConnection；啟動由 use-presence 負責。
  */
 export function officeConnection(): HubConnection {
@@ -193,7 +194,6 @@ export function officeConnection(): HubConnection {
         return token;
       },
     })
-    .withAutomaticReconnect({ nextRetryDelayInMilliseconds: (context) => RETRY_DELAYS[context.previousRetryCount] ?? RETRY_FALLBACK_DELAY })
     .configureLogging(LogLevel.Warning)
     .build();
   return connection;

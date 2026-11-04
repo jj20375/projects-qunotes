@@ -80,9 +80,15 @@ public interface IOfficeClient
     /// <summary>同一人在別的分頁進入了辦公室，這個分頁的辦公室席位被取代。</summary>
     Task OfficeSessionReplaced();
 
-    /// <summary>連線即將被伺服器斷開（例如權限異動或帳號停用）。</summary>
+    /// <summary>帳號、成員身分或公司已停用，連線即將被伺服器斷開；前端應登出且不再重連。</summary>
     /// <param name="reason">給使用者看的繁體中文原因。</param>
     Task ForceDisconnect(string reason);
+
+    /// <summary>
+    /// 權限、角色或部門異動使 <c>users.AuthVersion</c> 遞增，連線即將被伺服器斷開；
+    /// 前端不登出，改以 refresh token 換發新 token（與 REST 收到 401 時相同）後重新連線。
+    /// </summary>
+    Task ReauthRequired();
 }
 
 /// <summary>SignalR 群組名稱；公司群組收上線狀態，辦公室群組收走動與表情。</summary>
