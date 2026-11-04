@@ -20,6 +20,7 @@ using QuotePlatform.Api.Modules.Administration;
 using QuotePlatform.Api.Modules.Clients;
 using QuotePlatform.Api.Modules.Dashboard;
 using QuotePlatform.Api.Modules.Files;
+using QuotePlatform.Api.Modules.FollowUps;
 using QuotePlatform.Api.Modules.Identity;
 using QuotePlatform.Api.Modules.Office;
 using QuotePlatform.Api.Modules.ProjectDocuments;
@@ -51,6 +52,7 @@ if (args.SequenceEqual(["--self-test"]))
     OfficeRules.AssertExamples();
     PresenceTracker.AssertExamples();
     QuoteSeeder.AssertExistingRoleDefaults();
+    FollowUpRules.AssertExamples();
     Console.WriteLine("self-test passed");
     return;
 }
