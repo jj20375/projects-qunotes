@@ -127,6 +127,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<PresenceTracker>();
 builder.Services.AddSingleton<RateGate>();
 builder.Services.AddScoped<OfficeService>();
+builder.Services.AddScoped<FollowUpService>();
 builder.Services.AddSingleton<OfficeConnections>();
 builder.Services.AddHostedService<OfficeSweeper>();
 builder.Services.AddSignalR(options =>
