@@ -220,9 +220,11 @@ flowchart LR
 
 - 規格：`docs/superpowers/specs/2026-11-03-virtual-office-design.md`。
 - `Modules/Office/`：`OfficeMapGenerator`（依部門成員產生地圖）、`OfficeRules`（移動、聊天範圍、頻率限制）、`PresenceTracker`（記憶體上線狀態）、`OfficeHub`（SignalR）、`OfficeSweeper`（每 5 秒處理閒置／離線，每 `Quote__OfficeAuthSweepSeconds` 秒比對 AuthVersion）。
-- hub 以 query `access_token` 驗證（僅此路徑），連線時要求 `office:read`；公司隔離靠群組 `company:{id}`、`office:{companyId}:{departmentId}`，資料庫存取前以 `CompanyContext.UseCompany` 指定連線身分的公司。
-- 走動、表情、聊天、上線狀態不寫資料庫；`office_rooms` 存主題、`office_profiles` 存角色、手動狀態與最後在線時間。
-- Nginx 的 `/api/hubs/` 需 WebSocket upgrade 並關閉 access log（token 在 query string）。
+- hub 以 query `access_token` 驗證（僅此路徑），連線時要求 `office:read`；公司隔離靠群組 `company:{id}`、`office:{companyId}:{departmentId}`。hub 與背景巡檢沒有可靠的 HttpContext，資料庫存取前由 `OfficeService.UseCompany`（轉呼叫 `CompanyContext.UseCompany`）明確指定連線身分的公司。
+- 長連線不會每個請求重新驗證 JWT，由 `OfficeSweeper` 定期比對 `users.AuthVersion`、帳號、成員身分與公司狀態，並開啟 `CloseOnAuthenticationExpiration` 讓連線在 access token 到期時關閉。兩種結果：帳號、成員身分或公司停用 → 送 `ForceDisconnect`，前端登出且不重連；只有 `AuthVersion` 變動（改角色權限、部門等）→ 送 `ReauthRequired`，前端強制換發 token、重新讀取權限後重連，不登出（與 REST 收到 401 的行為一致）。
+- 走動、表情、聊天、上線狀態不寫資料庫；`office_rooms` 存主題、`office_profiles` 存角色、手動狀態與最後在線時間。上線狀態只在 API 記憶體，限單一實例；多實例時需加 SignalR Redis backplane。
+- Nginx 另設獨立的 `location /api/hubs/`（`infra/nginx/default.conf`）：WebSocket upgrade、`access_log off`（token 在 query string）。
+- 既有公司角色的 `office:read` 由 Seeder 一次性補上，部署此版本時必須執行一次 Seeder（見 `docs/permissions-and-data-scope.md` 3.2）。
 
 ## 7. 主要 API
 
@@ -354,6 +356,15 @@ company scope（公司一律取自 JWT，路由不帶 companyId）
 ```
 ✅ GET  /api/quote-imports/options                                              { ocrEnabled, ocrProvider }（是否啟用、使用 claude 或 gemini）
 ✅ POST /api/quote-imports（kind=ocr）                                           照片／掃描圖／PDF → Claude 或 Gemini 辨識 → 預覽（需 quotes:import_ocr）
+```
+
+第七階段已實作（✅，虛擬辦公室，見 6.8）：
+
+```
+✅ GET /api/office/rooms                                                        公司內啟用中的部門辦公室與成員數、在線人數、在場人數（需 office:read；部門樹完整載入，不分頁）
+✅ GET /api/office/presence                                                     公司內目前上線與閒置的成員（需 office:read）
+✅ PUT /api/office/rooms/{departmentId}/theme                                   設定部門辦公室主題（需 company.departments:update；wood｜carpet｜dark｜park｜space）
+✅ WebSocket /api/hubs/office?access_token=                                     SignalR hub：JoinOffice、Move、SendChat、Knock 等（需 office:read；事件見規格 4.1、4.2）
 ```
 
 後續：

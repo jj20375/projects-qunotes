@@ -1,7 +1,7 @@
 # 部門虛擬辦公室設計
 
 - 日期：2026-11-03
-- 狀態：設計已確認，待撰寫實作計畫
+- 狀態：已實作（分支 `feat/virtual-office`），內容已依實作與後續調整（寬螢幕版面、五種主題、AuthVersion 變更改為靜默重連）更新
 - 參考：[WorkAdventure](https://workadventu.re/)（互動概念）、[Star-Office-UI](https://github.com/ringhyacinth/Star-Office-UI)（「依狀態走到對應區域」的點子；其美術素材禁止商用，不採用任何素材與程式碼）
 
 ## 1. 目標與範圍
@@ -31,7 +31,7 @@
 │ AdminShell                  │          │ Modules/Office/              │
 │  └ use-presence（全域連線）  │◄─SignalR─►│  OfficeHub   /api/hubs/office │
 │     · 上線、閒置、心跳        │ WebSocket │  PresenceTracker（記憶體）    │
-│     · 收敲門通知             │          │  OfficeMapService（產生地圖） │
+│     · 收敲門通知             │          │  OfficeMapGenerator（產生地圖）│
 │                             │          │  OfficeController（REST）     │
 │ /office 頁（Vue 島嶼）       │          └──────────┬───────────────────┘
 │  └ Phaser 3（動態載入）       │                     │ EF Core
@@ -45,12 +45,11 @@
 |---|---|
 | `OfficeHub` | SignalR hub，路徑 `/api/hubs/office`。驗證沿用現有 JWT；僅此路徑接受 query `access_token`（於 `JwtBearerEvents.OnMessageReceived` 判斷）。連線依 JWT 的 `company_id` 加入公司群組 `company:{companyId}`，進入辦公室時加入 `office:{companyId}:{departmentId}`。 |
 | `PresenceTracker` | Singleton，記憶體保存每個 membership 的連線集合、最後操作時間、手動狀態、所在辦公室與格子座標。多分頁視為同一人。 |
-| `OfficeMapService` | 依部門成員產生地圖（見第 3 節），無副作用、可單元測試。 |
-| `OfficeController` | REST：辦公室列表與上線人數、取得地圖、上線狀態快照、讀寫自己的 `office_profiles`、管理員設定部門主題。 |
-| `OfficeAuthSweeper` | `BackgroundService`，每 60 秒以單次查詢（`WHERE Id IN (...)`）比對已連線使用者的 `AuthVersion`、帳號狀態與公司狀態，不一致者送出 `ForceDisconnect` 後斷線。 |
-| `PresenceSweeper` | 每 5 秒巡檢（純記憶體運算）：最後操作超過 5 分鐘者改為閒置；斷線超過 15 秒寬限期者改為離線並寫入 `LastSeenAt`。與 `OfficeAuthSweeper` 合併為 `OfficeSweeper`；AuthVersion 巡檢間隔可由 `Quote__OfficeAuthSweepSeconds` 調整（預設 60）。 |
+| `OfficeMapGenerator` | 靜態類別，依部門成員產生地圖（見第 3 節），無副作用、可單元測試。 |
+| `OfficeController` | REST：`GET /api/office/rooms`（辦公室列表與成員／在線／在場人數）、`GET /api/office/presence`（公司上線狀態快照）、`PUT /api/office/rooms/{departmentId}/theme`（設定部門主題，需部門管理的編輯權限）。地圖與個人設定不走 REST：`JoinOffice` 回傳地圖，`SetStatus`、`SetAvatar` 經 hub 寫入 `office_profiles`。 |
+| `OfficeSweeper` | `BackgroundService`，兩項工作。①每 5 秒巡檢（純記憶體運算）：最後操作超過 5 分鐘者改為閒置；斷線超過 15 秒寬限期者改為離線並寫入 `LastSeenAt`。②每 `Quote__OfficeAuthSweepSeconds` 秒（預設 60）以單次查詢（`WHERE Id IN (...)`）比對已連線使用者的 `AuthVersion`、帳號、成員身分與公司狀態：帳號、成員身分或公司已停用者送 `ForceDisconnect`（前端登出，不重連）；只有 `AuthVersion` 變動者送 `ReauthRequired`（前端換發 token 後重連，不登出）；兩者都在送出後短暫等待再斷線，讓事件先送達。 |
 
-長連線不會在每個請求重新驗證 JWT，因此 `OfficeAuthSweeper` 是「帳號停用、權限異動立即失效」原則在即時連線上的實作。
+長連線不會在每個請求重新驗證 JWT，因此 `OfficeSweeper` 的第②項是「帳號停用、權限異動立即失效」原則在即時連線上的實作；另外 hub 開啟 `CloseOnAuthenticationExpiration`，access token 到期時伺服器會主動關閉連線，前端重連時換發新 token。權限版本變更不登出使用者，與 REST 收到 401 時默默換發 token 的行為一致。
 
 ### 2.2 資料表
 
@@ -106,7 +105,7 @@
 
 ### 2.5 部署
 
-`infra/nginx/default.conf` 的 `/api/` 加上 WebSocket upgrade 標頭（`Upgrade`、`Connection`、適當的 `proxy_read_timeout`）。第一期假設 API 單一實例。
+`infra/nginx/default.conf` 另設獨立的 `location /api/hubs/`（比 `/api/` 更精確，優先比對）：`proxy_http_version 1.1`、`Upgrade` 與 `Connection "upgrade"` 標頭、`proxy_read_timeout 120s`，並 `access_log off`（token 在 query string，避免寫進存取日誌）。第一期假設 API 單一實例。
 
 ## 3. 地圖自動產生
 
@@ -156,7 +155,7 @@ y19 ##########################################
 ```json
 {
   "width": 30, "height": 20, "tileSize": 16, "theme": "wood",
-  "grid": ["##############################", "#.....#............#........#", "…"],
+  "grid": ["##############################", "#ffffff#f..........f#.fff.f.f#", "#......#............#........#", "…"],
   "furniture": [{ "kind": "desk", "x": 8, "y": 10 }],
   "zones": [
     { "id": "pantry", "type": "pantry", "x": 1, "y": 1, "w": 6, "h": 6 },
@@ -176,7 +175,7 @@ y19 ##########################################
 
 ### 3.4 角色外觀
 
-素材包中 8～12 個預設角色供成員選擇（存 `office_profiles.AvatarKey`）；未選擇者依 userId 雜湊得到固定的預設角色。
+提供 8 個角色外觀（`a1`～`a8`）供成員選擇（存 `office_profiles.AvatarKey`）；未選擇者依 userId 雜湊得到固定的預設角色。
 
 ## 4. 即時協定
 
@@ -206,10 +205,10 @@ y19 ##########################################
 
 | 對象 | 事件 |
 |---|---|
-| 辦公室群組 | `OccupantJoined`、`OccupantLeft`、`Moved`、`Emoted` |
+| 辦公室群組 | `OccupantJoined`、`OccupantLeft`、`Moved`、`Emoted`、`AvatarChanged` |
 | 計算出的收訊者 | `ChatReceived` |
-| 公司群組 | `PresenceChanged`（狀態變更併入此事件）、`AvatarChanged` |
-| 個人 | `PositionCorrected`、`Knocked`、`KnockAnswered`、`ForceDisconnect`、`OfficeSessionReplaced`（同一人在另一個分頁進入辦公室時，舊分頁收到） |
+| 公司群組 | `PresenceChanged`（狀態變更併入此事件） |
+| 個人 | `PositionCorrected`、`Knocked`、`KnockAnswered`、`OfficeSessionReplaced`（同一人在另一個分頁進入辦公室時，舊分頁收到）、`ForceDisconnect`（帳號、成員身分或公司已停用，前端登出）、`ReauthRequired`（`AuthVersion` 變動，前端換發 token 後重連，不登出） |
 
 其他成員收到 `Moved` 時以 150ms 補間移動角色。
 
@@ -251,10 +250,13 @@ y19 ##########################################
 
 ### 6.1 連線
 
-- 自動重連間隔 0、2、5、10、30 秒，之後每 30 秒重試；期間顯示「連線中斷，重新連線中…」，地圖凍結不清空。
+- 重連由前端 `use-presence` 統一處理（不使用 SignalR 內建自動重連，才能在重連前先處理 token）：間隔 0、2、5、10 秒，之後每 30 秒重試；期間顯示「連線中斷，重新連線中…」，地圖凍結不清空。
 - 重連後重新 `JoinOffice` 取得快照，回到斷線前的位置；該格被占則放到最近空格。
-- Token 過期時先走現有 refresh 流程，失敗則導回登入頁。
-- 收到 `ForceDisconnect`（帳號停用、`AuthVersion` 變更、公司停權、持續超量）時不自動重連，導回登入頁或顯示原因。
+- Token 到期時伺服器主動關閉連線（`CloseOnAuthenticationExpiration`），重連時先走現有 refresh 流程，失敗則導回登入頁。
+- 收到 `ReauthRequired`（`AuthVersion` 變動）：不登出；下一次連線前強制換發 token，重新讀取權限，換發被拒才導回登入頁，已沒有 `office` 權限則安靜停用辦公室（後台其他功能照常）。啟動連線收到 401（token 權限版本已過時）時同樣先強制換發；一般網路錯誤不換發，避免伺服器故障時每次重試都輪替 refresh token。
+- 收到 `ForceDisconnect`（帳號、成員身分或公司已停用）時不自動重連，清除 token 並導回登入頁。
+- 持續超量（同一連線 10 秒內被擋 50 次）：伺服器直接斷線，不送 `ForceDisconnect`，前端依上述間隔重連。
+- 平台代入公司或沒有 `office` 權限時前端不建立連線，辦公室頁顯示明確提示，不空白等待。
 
 ### 6.2 操作被拒
 
