@@ -336,7 +336,7 @@ public sealed class QuoteDbContext(DbContextOptions<QuoteDbContext> options, Com
             entity.Property(value => value.Id).HasComment("房間設定唯一識別碼");
             entity.Property(value => value.CompanyId).HasComment("所屬公司識別碼");
             entity.Property(value => value.DepartmentId).HasComment("所屬部門識別碼（一個部門一間辦公室）");
-            entity.Property(value => value.Theme).HasMaxLength(20).IsRequired().HasDefaultValue("wood").HasComment("地圖主題（wood / carpet / dark）");
+            entity.Property(value => value.Theme).HasMaxLength(20).IsRequired().HasDefaultValue("wood").HasComment("地圖主題（wood / carpet / dark / park / space）");
             entity.Property(value => value.CreatedAt).HasComment("建立時間戳記（UTC）");
             entity.Property(value => value.UpdatedAt).HasComment("最後更新時間戳記（UTC）");
             entity.HasIndex(value => new { value.CompanyId, value.DepartmentId }).IsUnique();

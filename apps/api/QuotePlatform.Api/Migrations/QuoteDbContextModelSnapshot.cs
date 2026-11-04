@@ -792,7 +792,7 @@ namespace QuotePlatform.Api.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("varchar(20)")
                         .HasDefaultValue("wood")
-                        .HasComment("地圖主題（wood / carpet / dark）");
+                        .HasComment("地圖主題（wood / carpet / dark / park / space）");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("datetime(6)")

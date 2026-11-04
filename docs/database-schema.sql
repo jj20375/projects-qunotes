@@ -744,7 +744,7 @@ CREATE TABLE office_rooms (
   Id           CHAR(36)     NOT NULL COMMENT '房間設定唯一識別碼',
   CompanyId    CHAR(36)     NOT NULL COMMENT '所屬公司識別碼',
   DepartmentId CHAR(36)     NOT NULL COMMENT '所屬部門識別碼（一個部門一間辦公室）',
-  Theme        VARCHAR(20)  NOT NULL DEFAULT 'wood' COMMENT '地圖主題（wood / carpet / dark）',
+  Theme        VARCHAR(20)  NOT NULL DEFAULT 'wood' COMMENT '地圖主題（wood / carpet / dark / park / space）',
   CreatedAt    DATETIME(6)  NOT NULL COMMENT '建立時間戳記（UTC）',
   UpdatedAt    DATETIME(6)  NOT NULL COMMENT '最後更新時間戳記（UTC）',
   PRIMARY KEY (Id),
