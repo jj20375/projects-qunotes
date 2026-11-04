@@ -46,6 +46,11 @@ const savedStatusText = ref('');
 const replaced = ref(false);
 const joining = ref(false);
 const canEditTheme = computed(() => can('company.departments', 'update'));
+// 平台代入公司時 presence 不會連線；其他無法連線的情況（權限被收回）由連線狀態得知。
+const unavailableMessage = computed(() => {
+  if (me.value!.scope.isImpersonating) return '平台代入公司時無法使用虛擬辦公室。';
+  return connectionState.value === 'unavailable' ? '目前無法連線到虛擬辦公室。' : '';
+});
 let scene: OfficeScene | null = null;
 let game: { destroy(removeCanvas: boolean): void } | null = null;
 let stopReconnected: (() => void) | null = null;
@@ -92,6 +97,7 @@ const wakeScene = () => scene?.wake();
 const releaseFocus = () => (document.activeElement as HTMLElement | null)?.blur();
 
 onMounted(async () => {
+  if (me.value!.scope.isImpersonating) return;
   const params = new URLSearchParams(window.location.search);
   const answer = params.get('answer');
   if (params.has('dept') || answer) history.replaceState(null, '', '/office');
@@ -105,7 +111,11 @@ onMounted(async () => {
   setOfficeKnockHandler(goToKnock);
   window.addEventListener('keydown', wakeScene);
   window.addEventListener('pointerdown', wakeScene);
-  await waitForOfficeConnection();
+  try {
+    await waitForOfficeConnection();
+  } catch {
+    return;
+  }
   if (wanted) await join(wanted);
   // 重連處理器在首次 join 之後才註冊：waitForOfficeConnection 在重連時也會放行等待者，
   // 先註冊的話首次載入遇到重連會 JoinOffice 兩次。
@@ -239,7 +249,8 @@ async function changeTheme(theme: string) {
 
 <template>
   <div class="office">
-    <div class="toolbar">
+    <a-alert v-if="unavailableMessage" type="warning" show-icon :message="unavailableMessage" />
+    <div v-show="!unavailableMessage" class="toolbar">
       <a-select :value="departmentId" :options="roomOptions" :loading="joining" style="width: 240px" @change="(value: unknown) => { releaseFocus(); void join(String(value)); }" />
       <a-select :value="status" :options="statusOptions" style="width: 110px" @change="(value: unknown) => { releaseFocus(); void changeStatus(value as OfficeStatus); }" />
       <a-input v-model:value="statusText" :maxlength="40" placeholder="狀態說明（選填）" style="width: 180px" @press-enter="saveStatusText" @blur="saveStatusText" />
@@ -260,7 +271,7 @@ async function changeTheme(theme: string) {
       </a-tooltip>
     </div>
     <a-alert v-if="connectionState === 'reconnecting' || connectionState === 'disconnected'" type="warning" show-icon banner message="連線中斷，重新連線中…" />
-    <div class="body">
+    <div v-show="!unavailableMessage" class="body">
       <div ref="canvasHost" class="canvas">
         <div v-if="replaced" class="overlay">
           <p>辦公室已在其他分頁開啟。</p>

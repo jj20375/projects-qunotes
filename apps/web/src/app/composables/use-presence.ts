@@ -24,7 +24,7 @@ const ACTIVITY_INTERVAL_MS = 60_000;
 const presence = reactive(new Map<string, PresenceEntry>());
 const lastSeen = reactive(new Map<string, string>());
 const reconnectedHandlers = new Set<() => void>();
-const connectedWaiters: (() => void)[] = [];
+const connectedWaiters: { resolve: () => void; reject: (error: Error) => void }[] = [];
 let knockHandler: ((knock: OfficeKnock) => void) | null = null;
 let started = false;
 let forced = false;
@@ -62,11 +62,12 @@ export function lastSeenOf(membershipId: string): string | undefined {
 
 /**
  * 等待連線建立；辦公室頁在 JoinOffice 前呼叫。
- * @returns 連線已建立時 resolve。
+ * @returns 連線已建立時 resolve；這個工作階段不會連線（平台代入公司、沒有 office 權限或權限被收回）時 reject。
  */
 export function waitForOfficeConnection(): Promise<void> {
+  if (connectionState.value === 'unavailable') return Promise.reject(new Error('虛擬辦公室目前無法使用。'));
   if (officeConnection().state === HubConnectionState.Connected) return Promise.resolve();
-  return new Promise((resolve) => connectedWaiters.push(resolve));
+  return new Promise((resolve, reject) => connectedWaiters.push({ resolve, reject }));
 }
 
 /**
@@ -102,7 +103,11 @@ export function answerKnock(from: string, accept: boolean, reply?: string): Prom
  * @param me 目前登入者的工作階段資訊。
  */
 export async function startPresence(me: Me): Promise<void> {
-  if (started || !canUsePresence(me)) return;
+  if (started) return;
+  if (!canUsePresence(me)) {
+    markUnavailable();
+    return;
+  }
   started = true;
   const hub = officeConnection();
   hub.on('PresenceChanged', applyPresence);
@@ -203,7 +208,13 @@ function stopPresence(): void {
   restartTimer = undefined;
   void officeConnection().stop();
   presence.clear();
+  markUnavailable();
+}
+
+// 先於 startPresence 掛載的辦公室頁正在等連線，必須讓它知道不會有連線，不能讓它永遠等下去。
+function markUnavailable(): void {
   connectionState.value = 'unavailable';
+  connectedWaiters.splice(0).forEach((waiter) => waiter.reject(new Error('虛擬辦公室目前無法使用。')));
 }
 
 // 伺服器在 token 到期時會主動關閉連線，onclose 與 start 失敗共用同一組重試間隔，避免每次到期都離線 30 秒以上。
@@ -219,7 +230,7 @@ function scheduleRestart(): void {
 
 function markConnected(): void {
   connectionState.value = 'connected';
-  connectedWaiters.splice(0).forEach((resolve) => resolve());
+  connectedWaiters.splice(0).forEach((waiter) => waiter.resolve());
 }
 
 async function loadSnapshot(): Promise<void> {

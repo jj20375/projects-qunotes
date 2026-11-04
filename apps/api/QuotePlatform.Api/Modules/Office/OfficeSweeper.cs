@@ -63,7 +63,8 @@ public sealed class OfficeSweeper(
                     await SweepAuthAsync(stoppingToken);
                 }
             }
-            catch (Exception error) when (error is not OperationCanceledException)
+            // 只有主機關閉才讓取消例外往外傳；其他來源的取消（例如逾時）若中止迴圈，BackgroundService 預設會停掉整個 API。
+            catch (Exception error) when (!stoppingToken.IsCancellationRequested)
             {
                 logger.LogError(error, "虛擬辦公室巡檢失敗。");
             }
@@ -72,25 +73,40 @@ public sealed class OfficeSweeper(
 
     private async Task SweepPresenceAsync(CancellationToken cancellationToken)
     {
+        // tracker.Sweep 已先改掉記憶體狀態；廣播或寫入任何一步失敗都不能讓其餘離線成員漏寫 LastSeenAt。
         var events = tracker.Sweep();
         foreach (var change in events)
         {
-            switch (change)
+            try
             {
-                case OccupantLeftEvent left:
-                    await hub.Clients.Group(OfficeGroups.Office(left.CompanyId, left.DepartmentId)).OccupantLeft(left.MembershipId);
-                    break;
-                case PresenceChangedEvent changed:
-                    await hub.Clients.Group(OfficeGroups.Company(changed.CompanyId)).PresenceChanged(changed.Entry, changed.LastSeenAt);
-                    break;
+                switch (change)
+                {
+                    case OccupantLeftEvent left:
+                        await hub.Clients.Group(OfficeGroups.Office(left.CompanyId, left.DepartmentId)).OccupantLeft(left.MembershipId);
+                        break;
+                    case PresenceChangedEvent changed:
+                        await hub.Clients.Group(OfficeGroups.Company(changed.CompanyId)).PresenceChanged(changed.Entry, changed.LastSeenAt);
+                        break;
+                }
+            }
+            catch (Exception error) when (!cancellationToken.IsCancellationRequested)
+            {
+                logger.LogWarning(error, "虛擬辦公室離線廣播失敗，略過這一則。");
             }
         }
         foreach (var company in events.OfType<PresenceChangedEvent>().Where(value => value.Entry.Presence == "offline" && value.LastSeenAt is not null).GroupBy(value => value.CompanyId))
         {
-            using var scope = scopes.CreateScope();
-            var service = scope.ServiceProvider.GetRequiredService<OfficeService>();
-            service.UseCompany(company.Key);
-            await service.WriteLastSeenAsync(company.Select(value => (value.Entry.MembershipId, value.LastSeenAt!.Value)).ToList(), cancellationToken);
+            try
+            {
+                using var scope = scopes.CreateScope();
+                var service = scope.ServiceProvider.GetRequiredService<OfficeService>();
+                service.UseCompany(company.Key);
+                await service.WriteLastSeenAsync(company.Select(value => (value.Entry.MembershipId, value.LastSeenAt!.Value)).ToList(), cancellationToken);
+            }
+            catch (Exception error) when (!cancellationToken.IsCancellationRequested)
+            {
+                logger.LogError(error, "寫入公司 {CompanyId} 的最後在線時間失敗。", company.Key);
+            }
         }
     }
 

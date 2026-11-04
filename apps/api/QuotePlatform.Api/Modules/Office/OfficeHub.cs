@@ -33,13 +33,27 @@ public sealed class OfficeHub(PresenceTracker tracker, RateGate gate, OfficeServ
             return;
         }
         var companyId = scope.CompanyId!.Value;
-        service.UseCompany(companyId);
-        var (profile, name) = await service.ProfileAsync(membershipId, scope.UserId, Context.ConnectionAborted);
-        connections.Register(Context);
-        await Groups.AddToGroupAsync(Context.ConnectionId, OfficeGroups.Company(companyId));
-        var changed = tracker.Connect(Context.ConnectionId, new ConnectionIdentity(companyId, membershipId, scope.UserId, scope.DepartmentId, name, scope.AuthVersion), profile);
-        if (changed is not null) await Clients.Group(OfficeGroups.Company(companyId)).PresenceChanged(changed.Entry, null);
-        await base.OnConnectedAsync();
+        try
+        {
+            service.UseCompany(companyId);
+            var (profile, name) = await service.ProfileAsync(membershipId, scope.UserId, Context.ConnectionAborted);
+            connections.Register(Context);
+            await Groups.AddToGroupAsync(Context.ConnectionId, OfficeGroups.Company(companyId));
+            var changed = tracker.Connect(Context.ConnectionId, new ConnectionIdentity(companyId, membershipId, scope.UserId, scope.DepartmentId, name, scope.AuthVersion), profile);
+            if (changed is not null) await Clients.Group(OfficeGroups.Company(companyId)).PresenceChanged(changed.Entry, null);
+            await base.OnConnectedAsync();
+        }
+        catch (OperationCanceledException) when (Context.ConnectionAborted.IsCancellationRequested)
+        {
+            // 用戶端剛握手就關閉：視為正常結束，不留錯誤紀錄。
+            Cleanup();
+        }
+        catch
+        {
+            // OnConnectedAsync 拋例外時 SignalR 不會再呼叫 OnDisconnectedAsync，不清掉的話這個人會永遠顯示在線。
+            Cleanup();
+            throw;
+        }
     }
 
     /// <summary>連線中斷時清除追蹤狀態與頻率限制計數；離線廣播由 <see cref="OfficeSweeper"/> 在寬限期後處理。</summary>
@@ -47,10 +61,15 @@ public sealed class OfficeHub(PresenceTracker tracker, RateGate gate, OfficeServ
     /// <returns>清理完成的工作。</returns>
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
+        Cleanup();
+        await base.OnDisconnectedAsync(exception);
+    }
+
+    private void Cleanup()
+    {
         tracker.Disconnect(Context.ConnectionId);
         connections.Unregister(Context.ConnectionId);
         gate.Forget(Context.ConnectionId + ":");
-        await base.OnDisconnectedAsync(exception);
     }
 
     /// <summary>前端偵測到操作時最多每 60 秒送一次，用來維持「在線」而非「閒置」。</summary>
