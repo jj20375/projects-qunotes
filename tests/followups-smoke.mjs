@@ -246,6 +246,11 @@ await step('專案列表：已逾期、待跟進、沒有下次聯絡的篩選�
   assert.deepEqual(await projectIds('sort=nextFollowUpOn&desc=true'), [pA, pB, pF]);
   assert.equal((await call('GET', '/api/projects?followUp=bogus', { token: admin })).status, 400);
   assert.equal((await projectIds('followUp=overdue', accountant)).length, 3, '沒有 followups:read 時忽略跟進篩選');
+  assert.deepEqual(
+    await projectIds('sort=nextFollowUpOn&desc=false', accountant),
+    await projectIds('sort=createdAt&desc=false', accountant),
+    '沒有 followups:read 時忽略下次聯絡排序'
+  );
 });
 
 await step('提醒範圍：未得標後不算待跟進但日期保留；已結案的專案只能讀', async () => {
