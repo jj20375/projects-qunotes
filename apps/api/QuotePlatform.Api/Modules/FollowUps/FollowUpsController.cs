@@ -11,6 +11,16 @@ namespace QuotePlatform.Api.Modules.FollowUps;
 public sealed class FollowUpsController(FollowUpService service) : ScopedControllerBase
 {
     /// <summary>
+    /// 跨專案跟進紀錄總表（目前資料範圍內的所有專案）。
+    /// </summary>
+    /// <param name="query">關鍵字、類型、撰寫人、部門、專案、日期區間、排序與分頁。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回 { total, page, pageSize, items }。</returns>
+    [HttpGet("followups")]
+    public async Task<ActionResult> Search([FromQuery] FollowUpSearchQuery query, CancellationToken cancellationToken) =>
+        TryCompany("followups", "read", out var scope) ? ToResult(await service.SearchAsync(scope, query, cancellationToken)) : Forbidden();
+
+    /// <summary>
     /// 查詢專案內的跟進紀錄（最新一筆在前）。
     /// </summary>
     /// <param name="projectId">專案識別碼。</param>

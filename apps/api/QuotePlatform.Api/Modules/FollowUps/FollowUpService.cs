@@ -52,6 +52,99 @@ public sealed class FollowUpService(QuoteDbContext db, ProjectAccessService acce
     }
 
     /// <summary>
+    /// 跨專案跟進紀錄總表：目前使用者看得到的專案內的所有紀錄。
+    /// </summary>
+    /// <param name="scope">目前使用者範圍。</param>
+    /// <param name="query">篩選、排序與分頁條件。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns><c>{ total, page, pageSize, items }</c>；每筆附專案摘要與客戶名稱。</returns>
+    /// <remarks>部門篩選含下層部門，且仍在資料範圍內（先套 VisibleProjects 再篩部門），與 Dashboard 相同。</remarks>
+    public async Task<ServiceResult<object>> SearchAsync(RequestScope scope, FollowUpSearchQuery query, CancellationToken cancellationToken)
+    {
+        if (query.From is DateOnly from && query.To is DateOnly to && from > to) return ServiceResult<object>.BadRequest("起始日期不可晚於結束日期。");
+        var type = FollowUpRules.Clean(query.Type);
+        if (type is not null && !FollowUpTypes.All.Contains(type)) return ServiceResult<object>.BadRequest("跟進類型不正確。");
+
+        var projects = access.VisibleProjects(scope);
+        if (query.DepartmentId is Guid departmentId)
+        {
+            projects = projects.Where(project => db.DepartmentClosures.Any(path => path.AncestorId == departmentId && path.DescendantId == project.DepartmentId));
+        }
+        if (query.ProjectId is Guid projectId) projects = projects.Where(project => project.Id == projectId);
+
+        var rows = db.ProjectFollowUps.AsNoTracking().Where(value => projects.Any(project => project.Id == value.ProjectId));
+        if (type is not null) rows = rows.Where(value => value.Type == type);
+        if (query.CreatedBy is Guid createdBy) rows = rows.Where(value => value.CreatedBy == createdBy);
+        if (query.From is DateOnly fromDate)
+        {
+            var fromAt = BusinessTime.StartOfDay(fromDate);
+            rows = rows.Where(value => value.OccurredAt >= fromAt);
+        }
+        if (query.To is DateOnly toDate)
+        {
+            var toAt = BusinessTime.StartOfDay(toDate.AddDays(1));
+            rows = rows.Where(value => value.OccurredAt < toAt);
+        }
+        if (FollowUpRules.Clean(query.Keyword) is string keyword)
+        {
+            rows = rows.Where(value => value.Summary.Contains(keyword)
+                || (value.Content != null && value.Content.Contains(keyword))
+                || (value.ContactName != null && value.ContactName.Contains(keyword))
+                || db.Projects.Any(project => project.Id == value.ProjectId
+                    && (project.ProjectNo.Contains(keyword) || project.Name.Contains(keyword) || project.Client.Name.Contains(keyword))));
+        }
+
+        var pageSize = Math.Clamp(query.PageSize ?? 20, 1, 200);
+        var page = Math.Max(query.Page ?? 1, 1);
+        var total = await rows.CountAsync(cancellationToken);
+        var sorted = (query.Sort == "createdAt", query.Desc ?? true) switch
+        {
+            (true, true) => rows.OrderByDescending(value => value.CreatedAt).ThenByDescending(value => value.Id),
+            (true, false) => rows.OrderBy(value => value.CreatedAt).ThenBy(value => value.Id),
+            (false, false) => rows.OrderBy(value => value.OccurredAt).ThenBy(value => value.CreatedAt),
+            _ => rows.LatestFirst(),
+        };
+        var items = await ToItems(sorted.Skip((page - 1) * pageSize).Take(pageSize)).ToListAsync(cancellationToken);
+
+        var projectIds = items.Select(value => value.ProjectId).Distinct().ToList();
+        var info = await db.Projects.AsNoTracking()
+            .Where(project => projectIds.Contains(project.Id))
+            .Select(project => new { project.Id, project.ProjectNo, project.Name, project.Status, project.NextFollowUpOn, ClientName = project.Client.Name })
+            .ToDictionaryAsync(value => value.Id, cancellationToken);
+
+        return ServiceResult<object>.Ok(new
+        {
+            total,
+            page,
+            pageSize,
+            items = items.Select(item =>
+            {
+                var project = info.GetValueOrDefault(item.ProjectId);
+                return new
+                {
+                    item.Id,
+                    item.ProjectId,
+                    item.Type,
+                    item.OccurredAt,
+                    item.ContactId,
+                    item.ContactName,
+                    item.Summary,
+                    item.Content,
+                    item.NextFollowUpOn,
+                    item.NextAction,
+                    item.NextDismissedAt,
+                    item.CreatedBy,
+                    item.CreatedAt,
+                    item.UpdatedBy,
+                    item.UpdatedAt,
+                    project = project is null ? null : new { project.Id, project.ProjectNo, project.Name, project.Status, project.NextFollowUpOn },
+                    clientName = project?.ClientName,
+                };
+            }),
+        });
+    }
+
+    /// <summary>
     /// 專案客戶的聯絡人，供表單下拉選單遠端查詢。
     /// </summary>
     /// <param name="scope">目前使用者範圍。</param>

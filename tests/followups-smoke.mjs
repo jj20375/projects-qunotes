@@ -190,6 +190,40 @@ await step('專案內列表：依最新一筆排序、關鍵字、類型、分�
   assert.equal((await call('GET', `/api/projects/${pA}/followups?type=fax`, { token: salesA })).status, 400);
 });
 
-// TASK5_STEPS
+await step('準備：業務 B 的逾期紀錄、財務部專案的紀錄', async () => {
+  const created = await ok(write(salesB, pB, base({ occurredAt: hoursAgo(120), summary: '催回覆', nextFollowUpOn: taipeiDate(-2) })), [201]);
+  rB = created.item.id;
+  rBAuthor = created.item.createdBy.id;
+  rF = (await ok(write(admin, pF, base({ summary: `財務部的紀錄 ${suffix}` })), [201])).item.id;
+});
+
+await step('總表：主管看得到部屬（部門樹）的紀錄、看不到財務部；業務只看到自己的；管理員看全部', async () => {
+  const managerAll = await ok(call('GET', '/api/followups', { token: manager }));
+  assert.equal(managerAll.total, 3);
+  assert.ok(managerAll.items.every((value) => value.project.id !== pF));
+  assert.equal((await ok(call('GET', '/api/followups', { token: salesA }))).total, 2);
+  const adminAll = await ok(call('GET', '/api/followups', { token: admin }));
+  assert.equal(adminAll.total, 4);
+  assert.equal(adminAll.items[0].clientName, '跟進客戶');
+  assert.equal(adminAll.items.find((value) => value.id === r1).project.nextFollowUpOn, taipeiDate(5));
+  assert.equal((await call('GET', '/api/followups', { token: accountant })).status, 403);
+});
+
+await step('總表：部門（含下層）、撰寫人、關鍵字、日期區間、分頁與排序', async () => {
+  const ids = async (query) => (await ok(call('GET', `/api/followups?${query}`, { token: admin }))).items.map((value) => value.id);
+  assert.deepEqual(await ids(`departmentId=${financeDept}`), [rF]);
+  assert.equal((await ok(call('GET', `/api/followups?departmentId=${salesDept}`, { token: admin }))).total, 3, '部門篩選含下層部門');
+  assert.deepEqual(await ids(`createdBy=${rBAuthor}`), [rB]);
+  assert.deepEqual(await ids(`keyword=${encodeURIComponent(`FU-B ${suffix}`)}`), [rB], '關鍵字比對專案名稱');
+  assert.deepEqual(await ids(`projectId=${pA}`), [r1, r0]);
+  assert.deepEqual(await ids(`from=${taipeiDate(-4)}&to=${taipeiDate(-2)}`), [r0]);
+  const paged = await ok(call('GET', '/api/followups?page=2&pageSize=3', { token: admin }));
+  assert.equal(paged.total, 4);
+  assert.deepEqual(paged.items.map((value) => value.id), [rB], '依發生時間新到舊，最舊的在最後一頁');
+  assert.equal((await ids('sort=occurredAt&desc=false'))[0], rB);
+  assert.equal((await call('GET', `/api/followups?from=${taipeiDate()}&to=${taipeiDate(-1)}`, { token: admin })).status, 400);
+});
+
+// TASK6_STEPS
 
 console.log(`\n${passed} 項跟進紀錄驗證通過`);
