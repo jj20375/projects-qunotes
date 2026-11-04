@@ -310,7 +310,7 @@ await step('資料範圍上限：建角色、指派角色、個別資料範圍�
       full('company.roles'),
       { ...full('company.users'), perDelete: false, options: ['assign_role'] },
       // 讀取權限涵蓋「唯讀」角色，才能把成員指派成唯讀；這樣被擋下的原因只會是資料範圍。
-      ...['dashboard', 'office', 'clients', 'products', 'projects', 'quotes', 'orders', 'warranties', 'invoices'].map((code) => ({ code, perRead: true, perCreate: false, perUpdate: false, perDelete: false, options: [] })),
+      ...['dashboard', 'office', 'clients', 'products', 'projects', 'followups', 'quotes', 'orders', 'warranties', 'invoices'].map((code) => ({ code, perRead: true, perCreate: false, perUpdate: false, perDelete: false, options: [] })),
     ] },
   });
   assert.equal(manager.status, 201, JSON.stringify(manager.data));
