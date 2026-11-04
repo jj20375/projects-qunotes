@@ -95,11 +95,11 @@
 ### 3.2 下次聯絡與「最新一筆」
 
 - 「最新一筆」：同專案未刪除的紀錄中 `OccurredAt` 最大者，相同時再比 `CreatedAt`。補登一筆較早的拜訪不會蓋掉後來的下次聯絡日。
-- 專案的狀態欄位由唯一的重算函式 `FollowUpService.RecalculateAsync(project)` 寫入：
+- 專案的狀態欄位由唯一的重算函式 `FollowUpService.SaveAndRecalculateAsync(projectId)` 寫入：
   - `LastFollowUpAt` = 最新一筆的 `OccurredAt`（沒有紀錄時為 NULL）。
   - `NextFollowUpOn` = 最新一筆的 `NextFollowUpOn`，但該筆 `NextDismissedAt` 不為 NULL 時為 NULL。
 - 新增、修改、刪除、不用跟進都在同一個資料庫交易內呼叫重算；其他程式不得直接寫這兩個欄位。
-- 重算以單一 `UPDATE projects SET … = (SELECT … FROM project_followups … LIMIT 1)` 完成（EF Core `ExecuteUpdateAsync`）：InnoDB 對 UPDATE 內的子查詢做加鎖讀取，同一專案兩人同時寫紀錄時，後寫的人會等前一筆交易完成並讀到它，不會算出過期的狀態。
+- 重算以單一 `UPDATE projects SET … = (SELECT … FROM project_followups … LIMIT 1)` 完成（EF Core `ExecuteUpdateAsync`）：交易內先以不改值的 UPDATE 鎖住專案列，同一專案兩人同時寫紀錄時會排隊序列化（否則在 REPEATABLE READ 下可能互等而死結），後寫的人讀得到前一筆，不會算出過期的狀態。
 - 寫了新的一筆，前一筆的待辦自然結束（只看最新一筆），不需要另外打勾。
 - 刪除最新一筆時，狀態倒回前一筆的值（包含前一筆的下次聯絡日）。
 - 「不用跟進」只作用在最新一筆；沒有下次聯絡日時回 400。修改該筆的下次聯絡日會清掉 `NextDismissedAt`（重新提醒）。

@@ -101,7 +101,7 @@ public sealed class FollowUpService(QuoteDbContext db, ProjectAccessService acce
         {
             (true, true) => rows.OrderByDescending(value => value.CreatedAt).ThenByDescending(value => value.Id),
             (true, false) => rows.OrderBy(value => value.CreatedAt).ThenBy(value => value.Id),
-            (false, false) => rows.OrderBy(value => value.OccurredAt).ThenBy(value => value.CreatedAt),
+            (false, false) => rows.OrderBy(value => value.OccurredAt).ThenBy(value => value.CreatedAt).ThenBy(value => value.Id),
             _ => rows.LatestFirst(),
         };
         var items = await ToItems(sorted.Skip((page - 1) * pageSize).Take(pageSize)).ToListAsync(cancellationToken);
@@ -305,12 +305,15 @@ public sealed class FollowUpService(QuoteDbContext db, ProjectAccessService acce
 
     /// <summary>寫入紀錄後在同一個交易內重算專案的跟進狀態。</summary>
     /// <remarks>
-    /// 重算是單一 UPDATE 加子查詢：InnoDB 對 UPDATE 內的子查詢做加鎖讀取，同一專案兩人同時寫入時，
-    /// 後到的交易會等前一筆提交並讀到它，不會算出過期的狀態。子查詢的排序必須與 LatestFirst 相同。
+    /// 先以不改值的 UPDATE 鎖住專案列，同一專案的並行寫入會在這裡排隊；否則兩邊各自插入紀錄後，
+    /// 又互等對方未提交的列與專案列鎖，在 REPEATABLE READ 下會死結（MariaDB 1213）。
+    /// 重算是單一 UPDATE 加子查詢，子查詢的排序必須與 LatestFirst 相同。
     /// </remarks>
     private async Task<FollowUpProjectState> SaveAndRecalculateAsync(Guid projectId, CancellationToken cancellationToken)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await db.Projects.Where(value => value.Id == projectId)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(value => value.LastFollowUpAt, value => value.LastFollowUpAt), cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         var latest = db.ProjectFollowUps.Where(value => value.ProjectId == projectId).LatestFirst();
         await db.Projects.Where(value => value.Id == projectId).ExecuteUpdateAsync(setters => setters

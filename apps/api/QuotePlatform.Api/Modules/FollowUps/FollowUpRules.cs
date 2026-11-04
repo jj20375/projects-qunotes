@@ -96,11 +96,11 @@ public static class FollowUpRules
 public static class FollowUpQueryExtensions
 {
     /// <summary>
-    /// 「最新一筆」的排序：發生時間新到舊，同時間再比建立時間。
+    /// 「最新一筆」的排序：發生時間新到舊，同時間再比建立時間與 Id。
     /// </summary>
     /// <param name="rows">跟進紀錄查詢。</param>
     /// <returns>排序後的查詢。</returns>
     /// <remarks>補登一筆較早的拜訪不會變成最新一筆。重算專案狀態、取下次要做的事與時間軸都必須用這個排序，三者才會一致。</remarks>
     public static IOrderedQueryable<ProjectFollowUp> LatestFirst(this IQueryable<ProjectFollowUp> rows) =>
-        rows.OrderByDescending(value => value.OccurredAt).ThenByDescending(value => value.CreatedAt);
+        rows.OrderByDescending(value => value.OccurredAt).ThenByDescending(value => value.CreatedAt).ThenByDescending(value => value.Id);
 }
