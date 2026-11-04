@@ -108,7 +108,8 @@ const table = useTable<DataTableFeatures, T>({
   defaultColumn: { enableSorting: false },
   // 排序與分頁由後端處理：表格只記錄狀態並通知頁面，不自己重排或切資料。
   manualSorting: true,
-  manualPagination: computed(() => !!props.pagination),
+  // 沒有伺服器分頁、也沒指定 clientPageSize 時不分頁；否則 TanStack 預設的每頁 20 筆會在沒有分頁器的情況下悄悄截掉後面的列。
+  manualPagination: computed(() => !!props.pagination || !props.clientPageSize),
   rowCount: computed(() => (props.pagination ? props.pagination.total : undefined)),
   enableSortingRemoval: true,
   sortDescFirst: false,
