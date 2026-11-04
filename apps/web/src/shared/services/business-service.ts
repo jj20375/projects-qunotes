@@ -5,6 +5,7 @@
  * 安全原則：所有公司範圍與資料範圍（own / department / department_tree / company）均由後端依已驗證之 JWT 決定。
  */
 import { apiRequest } from '@/shared/api/http-client';
+import type { FollowUpFilter } from '@/shared/services/followup-service';
 
 // ---------- 通訊錄 ----------
 
@@ -261,6 +262,7 @@ export interface ProjectSearchQuery {
   pageSize?: number;
   sort?: string;
   desc?: boolean;
+  followUp?: FollowUpFilter;
 }
 
 /** 專案列表列項目 */
@@ -281,6 +283,10 @@ export interface ProjectRow {
   currency: string;
   createdAt: string;
   memberCount: number;
+  /** 最新一筆跟進紀錄的發生時間；沒有 followups:read 時為 null */
+  lastFollowUpAt: string | null;
+  /** 下次聯絡日（YYYY-MM-DD）；沒有排定或沒有 followups:read 時為 null */
+  nextFollowUpOn: string | null;
 }
 
 /** 專案查詢結果（含統計合計） */
@@ -317,6 +323,12 @@ export interface ProjectDetail {
   description: string | null;
   wonAt: string | null;
   closedAt: string | null;
+  /** 最新一筆跟進紀錄的發生時間；沒有 followups:read 時為 null */
+  lastFollowUpAt: string | null;
+  /** 下次聯絡日（YYYY-MM-DD）；沒有排定或沒有 followups:read 時為 null */
+  nextFollowUpOn: string | null;
+  /** 下次要做的事 */
+  nextAction: string | null;
   createdAt: string;
   updatedAt: string;
   myRole: string | null;
