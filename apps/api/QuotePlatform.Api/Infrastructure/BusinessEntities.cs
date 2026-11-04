@@ -195,6 +195,12 @@ public sealed class Project : ICompanyOwned, ISoftDelete
     /// <summary>專案結案確認時間戳記。</summary>
     public DateTimeOffset? ClosedAt { get; set; }
 
+    /// <summary>最新一筆跟進紀錄的發生時間（UTC）；只由 FollowUpService 重算寫入。</summary>
+    public DateTimeOffset? LastFollowUpAt { get; set; }
+
+    /// <summary>下次聯絡日（台灣日期）；最新一筆沒填或已按「不用跟進」時為 null。只由 FollowUpService 重算寫入。</summary>
+    public DateOnly? NextFollowUpOn { get; set; }
+
     /// <summary>建立者使用者識別碼。</summary>
     public Guid CreatedBy { get; set; }
 
