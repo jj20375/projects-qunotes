@@ -66,6 +66,12 @@ await step('admin 登入為 platform scope，選單只有平台功能', async ()
   assert.deepEqual(menu.map((node) => node.code), ['platform.system_manager']);
 });
 
+await step('既有業務角色預設取得虛擬辦公室 office:read', async () => {
+  const sales = await login('demo-sales');
+  const me = (await call('GET', '/api/auth/me', { token: sales.token })).data;
+  assert.ok(hasGrant(me, 'office', 'read'));
+});
+
 await step('平台開通新公司，並拒絕重複代碼', async () => {
   const body = { name: `測試公司 ${suffix}`, slug: `t-${suffix}`, adminAccount: `t-admin-${suffix}`, adminDisplayName: '測試管理員', adminPassword: seedPassword };
   const created = await call('POST', '/api/platform/companies', { token: admin.token, body });
@@ -304,7 +310,7 @@ await step('資料範圍上限：建角色、指派角色、個別資料範圍�
       full('company.roles'),
       { ...full('company.users'), perDelete: false, options: ['assign_role'] },
       // 讀取權限涵蓋「唯讀」角色，才能把成員指派成唯讀；這樣被擋下的原因只會是資料範圍。
-      ...['dashboard', 'clients', 'products', 'projects', 'quotes', 'orders', 'warranties', 'invoices'].map((code) => ({ code, perRead: true, perCreate: false, perUpdate: false, perDelete: false, options: [] })),
+      ...['dashboard', 'office', 'clients', 'products', 'projects', 'quotes', 'orders', 'warranties', 'invoices'].map((code) => ({ code, perRead: true, perCreate: false, perUpdate: false, perDelete: false, options: [] })),
     ] },
   });
   assert.equal(manager.status, 201, JSON.stringify(manager.data));

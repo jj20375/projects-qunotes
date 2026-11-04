@@ -9,6 +9,7 @@ import type { PermissionRequirement } from '@/shared/types/permissions';
 
 export type RouteKey =
   | 'dashboard'
+  | 'office'
   | 'companies'
   | 'system-users'
   | 'platform-roles'
@@ -36,6 +37,7 @@ export interface RouteManifestItem {
 
 export const routeManifest: RouteManifestItem[] = [
   { key: 'dashboard', path: '/', title: '首頁' },
+  { key: 'office', path: '/office', title: '虛擬辦公室', scope: 'company', requirement: { code: 'office' } },
   { key: 'companies', path: '/platform/companies', title: '公司管理', scope: 'platform', requirement: { code: 'platform.companies' } },
   { key: 'system-users', path: '/platform/system-users', title: '系統帳號', scope: 'platform', requirement: { code: 'platform.system_users' } },
   { key: 'platform-roles', path: '/platform/roles', title: '系統角色', scope: 'platform', requirement: { code: 'platform.roles' } },

@@ -52,7 +52,7 @@ flowchart LR
 | 元件 | 說明 |
 |---|---|
 | Nginx | 單一入口：`/` 後台靜態檔、`/api` → API、`/files` → file-server |
-| API | JWT 驗證、授權、業務邏輯、PDF／Excel 產生、Dashboard 聚合 |
+| API | JWT 驗證、授權、業務邏輯、PDF／Excel 產生、Dashboard 聚合。另提供 SignalR hub `/api/hubs/office`（虛擬辦公室），上線狀態只存在記憶體，限單一實例；多實例時需加 Redis backplane。 |
 | file-server | 沿用美達特 `media-server/src/token.mjs`、`upload-manifest.mjs`、`range.mjs` 的機制；API 簽發上傳／下載 token，file-server 只驗 token 不讀資料庫 |
 | MariaDB | **沿用美達特的共用 MariaDB**（`DB_MODE=shared`，見第 9 節）；本系統只用自己的資料庫 `quote_platform` 與帳號 `quote_app`，不碰任何 `metat_*` 庫 |
 | MinIO | 獨立 bucket `quote-files`、獨立 access key；物件 key：`{companyId}/{yyyy}/{MM}/{fileId}` |
@@ -216,6 +216,16 @@ flowchart LR
 - 分頁規則：明細列不跨頁拆開；分段標題至少帶著下一列；合計區不拆開；條款的標題與第一條在一起，每條以懸掛縮排排版；最後兩個區塊與簽章欄綁在一起，避免最後一頁只剩簽章。
 - 頁尾：單號、版次、第 x / y 頁。以 6–50 筆明細、12 條條款掃描驗證：12–13 筆一頁、40 筆兩頁，沒有拆開的列或只剩簽章的頁。
 
+### 6.8 部門虛擬辦公室
+
+- 規格：`docs/superpowers/specs/2026-11-03-virtual-office-design.md`。
+- `Modules/Office/`：`OfficeMapGenerator`（依部門成員產生地圖）、`OfficeRules`（移動、聊天範圍、頻率限制）、`PresenceTracker`（記憶體上線狀態）、`OfficeHub`（SignalR）、`OfficeSweeper`（每 5 秒處理閒置／離線，每 `Quote__OfficeAuthSweepSeconds` 秒比對 AuthVersion）。
+- hub 以 query `access_token` 驗證（僅此路徑），連線時要求 `office:read`；公司隔離靠群組 `company:{id}`、`office:{companyId}:{departmentId}`。hub 與背景巡檢沒有可靠的 HttpContext，資料庫存取前由 `OfficeService.UseCompany`（轉呼叫 `CompanyContext.UseCompany`）明確指定連線身分的公司。
+- 長連線不會每個請求重新驗證 JWT，由 `OfficeSweeper` 定期比對 `users.AuthVersion`、帳號、成員身分與公司狀態，並開啟 `CloseOnAuthenticationExpiration` 讓連線在 access token 到期時關閉。兩種結果：帳號、成員身分或公司停用 → 送 `ForceDisconnect`，前端登出且不重連；只有 `AuthVersion` 變動（改角色權限、部門等）→ 送 `ReauthRequired`，前端強制換發 token、重新讀取權限後重連，不登出（與 REST 收到 401 的行為一致）。
+- 走動、表情、聊天、上線狀態不寫資料庫；`office_rooms` 存主題、`office_profiles` 存角色、手動狀態與最後在線時間。上線狀態只在 API 記憶體，限單一實例；多實例時需加 SignalR Redis backplane。
+- Nginx 另設獨立的 `location /api/hubs/`（`infra/nginx/default.conf`）：WebSocket upgrade、`access_log off`（token 在 query string）。
+- 既有公司角色的 `office:read` 由 Seeder 一次性補上，部署此版本時必須執行一次 Seeder（見 `docs/permissions-and-data-scope.md` 3.2）。
+
 ## 7. 主要 API
 
 ### 7.0.1 表格元件（DataTable）
@@ -346,6 +356,15 @@ company scope（公司一律取自 JWT，路由不帶 companyId）
 ```
 ✅ GET  /api/quote-imports/options                                              { ocrEnabled, ocrProvider }（是否啟用、使用 claude 或 gemini）
 ✅ POST /api/quote-imports（kind=ocr）                                           照片／掃描圖／PDF → Claude 或 Gemini 辨識 → 預覽（需 quotes:import_ocr）
+```
+
+第七階段已實作（✅，虛擬辦公室，見 6.8）：
+
+```
+✅ GET /api/office/rooms                                                        公司內啟用中的部門辦公室與成員數、在線人數、在場人數（需 office:read；部門樹完整載入，不分頁）
+✅ GET /api/office/presence                                                     公司內目前上線與閒置的成員（需 office:read）
+✅ PUT /api/office/rooms/{departmentId}/theme                                   設定部門辦公室主題（需 company.departments:update；wood｜carpet｜dark｜park｜space）
+✅ WebSocket /api/hubs/office?access_token=                                     SignalR hub：JoinOffice、Move、SendChat、Knock 等（需 office:read；事件見規格 4.1、4.2）
 ```
 
 後續：

@@ -12,6 +12,7 @@ const props = defineProps<{ routeKey: RouteKey }>();
 
 const views: Record<RouteKey, () => Promise<{ default: Component }>> = {
   dashboard: () => import('@/pages/_components/DashboardView.vue'),
+  office: () => import('@/pages/office/_components/OfficeView.vue'),
   companies: () => import('@/pages/platform/companies/_components/CompaniesView.vue'),
   'system-users': () => import('@/pages/platform/system-users/_components/SystemUsersView.vue'),
   'platform-roles': () => import('@/pages/admin/roles/_components/RolesView.vue'),

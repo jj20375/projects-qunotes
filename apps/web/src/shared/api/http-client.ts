@@ -91,6 +91,18 @@ function isExpiringSoon(token: string): boolean {
   }
 }
 
+/**
+ * 給 WebSocket 等不經 apiRequest 的連線使用：快過期就先換發。
+ * refresh 被拒（401）時 token 已被清除而回傳 null；網路錯誤時回傳舊 token，讓連線稍後自行重試。
+ * @returns 可用的 access token；已登出時為 null。
+ */
+export async function ensureFreshAccessToken(): Promise<string | null> {
+  const token = readAccessToken();
+  if (token && !isExpiringSoon(token)) return token;
+  await refreshAccessToken();
+  return readAccessToken();
+}
+
 async function send(path: string, options: ApiRequestOptions): Promise<Response> {
   let token = readAccessToken();
   if (token && (options.handleUnauthorized ?? true) && isExpiringSoon(token) && (await refreshAccessToken())) token = readAccessToken();

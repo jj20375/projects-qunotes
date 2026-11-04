@@ -10,12 +10,13 @@ namespace QuotePlatform.Api.Infrastructure;
 /// <remarks>
 /// 與美達特不同，admin 密碼只在帳號不存在時設定，之後重跑 Seeder 不會把密碼改回預設值。
 /// </remarks>
-public sealed class QuoteSeeder(QuoteDbContext db, CompanyProvisioner provisioner, CompanyContext companyContext, IOptions<QuoteOptions> options, ILogger<QuoteSeeder> logger)
+public sealed class QuoteSeeder(QuoteDbContext db, CompanyProvisioner provisioner, CompanyContext companyContext, AuditService audit, IOptions<QuoteOptions> options, ILogger<QuoteSeeder> logger)
 {
     public async Task SeedAsync(CancellationToken cancellationToken)
     {
         await SeedPermissionsAsync(cancellationToken);
         await SeedSystemRolesAsync(cancellationToken);
+        await GrantNewPermissionDefaultsAsync(cancellationToken);
         await SeedAdminAsync(cancellationToken);
         if (options.Value.SeedDemoData) await SeedDemoCompanyAsync(cancellationToken);
     }
@@ -84,6 +85,50 @@ public sealed class QuoteSeeder(QuoteDbContext db, CompanyProvisioner provisione
             }
         }
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>預設替既有公司角色開放 read 的功能。</summary>
+    private static readonly string[] ReadByDefaultForExistingRoles = ["office"];
+
+    /// <summary>已完成預設授權的持久標記（audit_logs 的 Action）；有這筆紀錄就不再處理該權限。</summary>
+    private const string DefaultGrantedAction = "permission.default_granted";
+
+    /// <summary>
+    /// 新功能第一次出現時，替既有的公司角色補上 read；之後管理員收回也不會再被補回。
+    /// </summary>
+    /// <remarks>
+    /// 以 audit_logs 的 <c>permission.default_granted</c> 紀錄當一次性標記，而不是「這次執行才新建權限列」：
+    /// 權限列在 <see cref="SeedPermissionsAsync"/> 就已提交，若授權在後面失敗，重跑時仍會補上。
+    /// 沒有任何角色需要補授權（例如全新資料庫）時也寫入標記，管理員日後收回的授權才不會被補回。
+    /// 授權、AuthVersion 遞增與標記在同一個交易，要嘛全部完成、要嘛全部重來。
+    /// 完整存取角色由 <see cref="SeedSystemRolesAsync"/> 同步；這裡只處理其他公司角色（系統與自訂）。
+    /// Seeder 沒有公司範圍，查 membership 必須 IgnoreQueryFilters；audit_logs 不受公司過濾。
+    /// </remarks>
+    private async Task GrantNewPermissionDefaultsAsync(CancellationToken cancellationToken)
+    {
+        foreach (var code in ReadByDefaultForExistingRoles)
+        {
+            var permissionId = await db.Permissions.Where(value => value.Code == code).Select(value => value.Id).SingleAsync(cancellationToken);
+            if (await db.AuditLogs.AnyAsync(value => value.EntityType == "permission" && value.EntityId == permissionId && value.Action == DefaultGrantedAction, cancellationToken)) continue;
+
+            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+            var roleIds = await db.Roles
+                .Where(role => role.Scope == "company" && !role.IsFullAccess && !db.RolePermissions.Any(value => value.RoleId == role.Id && value.PermissionId == permissionId))
+                .Select(role => role.Id)
+                .ToListAsync(cancellationToken);
+            if (roleIds.Count > 0)
+            {
+                db.RolePermissions.AddRange(roleIds.Select(roleId => new RolePermission { RoleId = roleId, PermissionId = permissionId, PerRead = true, OptionsJson = "[]" }));
+                await db.SaveChangesAsync(cancellationToken);
+                var userIds = db.CompanyMemberships.IgnoreQueryFilters().Where(value => roleIds.Contains(value.RoleId)).Select(value => value.UserId);
+                await db.Users.Where(user => userIds.Contains(user.Id))
+                    .ExecuteUpdateAsync(setters => setters.SetProperty(user => user.AuthVersion, user => user.AuthVersion + 1), cancellationToken);
+            }
+            audit.Add(null, null, "permission", permissionId, DefaultGrantedAction, after: new { code, roleIds });
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            logger.LogInformation("已記錄 {Code}:read 的預設授權，替 {Count} 個既有角色開放。", code, roleIds.Count);
+        }
     }
 
     private async Task SeedAdminAsync(CancellationToken cancellationToken)

@@ -178,6 +178,13 @@ erDiagram
 | `upload_sessions` | 同美達特 `media_upload_sessions`，chunk 清單只存在 file-server 的 manifest |
 | `attachments` | 多型關聯：`OwnerType` = project／quote／order／warranty／invoice／client，`OwnerId` 為對應 Id；索引(`CompanyId`,`OwnerType`,`OwnerId`)。因為多型無法建 FK，由 Service 驗證 Owner 存在且在資料範圍內 |
 
+### 4.7 虛擬辦公室
+
+| 資料表 | 用途與主要約束 |
+|---|---|
+| `office_rooms` | 部門辦公室設定（目前只有主題）；unique(`CompanyId`,`DepartmentId`)；管理員第一次設定主題時建立，沒有資料列時主題視為 `wood` |
+| `office_profiles` | 成員的角色外觀、手動狀態、狀態文字與最後在線時間；unique(`MembershipId`)；`Status` CHECK 限五種值。走動、表情、聊天、上線狀態本身只存在 API 記憶體，不寫資料庫 |
+
 ## 5. Dashboard 查詢依據
 
 | 指標 | 來源 | 時間欄位 |

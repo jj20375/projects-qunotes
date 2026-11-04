@@ -12,12 +12,14 @@
   "dependencies": {
     "@ant-design/icons-vue": "7.0.1",
     "@astrojs/vue": "7.1.2",
+    "@microsoft/signalr": "10.0.11",
     "@tanstack/vue-query": "5.101.4",
     "@tanstack/vue-table": "9.3.1",
     "ant-design-vue": "4.2.6",
     "astro": "7.4.4",
     "dayjs": "1.11.21",
     "echarts": "6.1.0",
+    "phaser": "3.90.0",
     "vue": "3.5.44"
   },
   "devDependencies": {

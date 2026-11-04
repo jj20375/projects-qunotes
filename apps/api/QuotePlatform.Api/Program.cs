@@ -21,6 +21,7 @@ using QuotePlatform.Api.Modules.Clients;
 using QuotePlatform.Api.Modules.Dashboard;
 using QuotePlatform.Api.Modules.Files;
 using QuotePlatform.Api.Modules.Identity;
+using QuotePlatform.Api.Modules.Office;
 using QuotePlatform.Api.Modules.ProjectDocuments;
 using QuotePlatform.Api.Modules.Products;
 using QuotePlatform.Api.Modules.Projects;
@@ -46,6 +47,9 @@ if (args.SequenceEqual(["--self-test"]))
     QuoteTerms.AssertExamples();
     DocumentNumberPattern.AssertExamples();
     AiSettings.AssertExamples();
+    OfficeMapGenerator.AssertExamples();
+    OfficeRules.AssertExamples();
+    PresenceTracker.AssertExamples();
     Console.WriteLine("self-test passed");
     return;
 }
@@ -116,6 +120,19 @@ builder.Services.AddScoped<AttachmentService>();
 builder.Services.AddScoped<ProjectDocumentService>();
 builder.Services.AddScoped<ShipmentService>();
 builder.Services.AddScoped<DashboardService>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<PresenceTracker>();
+builder.Services.AddSingleton<RateGate>();
+builder.Services.AddScoped<OfficeService>();
+builder.Services.AddSingleton<OfficeConnections>();
+builder.Services.AddHostedService<OfficeSweeper>();
+builder.Services.AddSignalR(options =>
+{
+    // 走動、聊天訊息都很小；限制單則大小避免被灌大封包。
+    options.MaximumReceiveMessageSize = 8 * 1024;
+    options.KeepAliveInterval = TimeSpan.FromSeconds(15);
+    options.ClientTimeoutInterval = TimeSpan.FromSeconds(30);
+});
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -135,6 +152,16 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
         options.Events = new JwtBearerEvents
         {
+            // WebSocket 無法帶 Authorization header；只有虛擬辦公室 hub 接受 query 的 access_token。
+            OnMessageReceived = context =>
+            {
+                if (context.HttpContext.Request.Path.StartsWithSegments(OfficeHub.Path)
+                    && context.Request.Query.TryGetValue("access_token", out var token))
+                {
+                    context.Token = token;
+                }
+                return Task.CompletedTask;
+            },
             // 每個請求都比對 AuthVersion 與公司狀態：權限、身分或密碼異動後，舊 access token 立即失效。
             OnTokenValidated = async context =>
             {
@@ -172,6 +199,8 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
 app.MapControllers();
+// 長連線不會重新驗證 JWT；token 過期（含登出後仍有效的舊 token）時由伺服器關閉連線，前端以 accessTokenFactory 帶新 token 重連。
+app.MapHub<OfficeHub>(OfficeHub.Path, options => options.CloseOnAuthenticationExpiration = true);
 
 // migration／Seeder 只看明確的 opt-in 旗標，不綁 ASPNETCORE_ENVIRONMENT（沿用美達特的教訓）。
 if (quoteOptions.MigrateOnStart || quoteOptions.BootstrapOnStart || seedOnly)

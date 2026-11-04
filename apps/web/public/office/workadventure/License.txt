@@ -1,0 +1,3 @@
+WorkAdventure-Style Modern Office 16x16 Tileset
+License: CC0 1.0 Universal (Public Domain)
+Created for QuotePlatform Virtual Office.

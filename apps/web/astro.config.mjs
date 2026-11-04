@@ -17,7 +17,7 @@ export default defineConfig({
     resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
     server: {
       proxy: {
-        '/api': { target: apiTarget, changeOrigin: false },
+        '/api': { target: apiTarget, changeOrigin: false, ws: true },
         '/files': { target: fileTarget, changeOrigin: false },
       },
     },

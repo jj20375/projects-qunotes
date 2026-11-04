@@ -87,8 +87,15 @@
 | company | `warranties` | `/projects/:id/warranties` | `download`：下載附件 |
 | company | `invoices` | `/projects/:id/invoices` | `download`：下載附件、`mark_paid`：登記收款、`void`：作廢 |
 | company | `dashboard` | `/` | `view_amount`：檢視金額、`view_all_staff`：檢視全員排行 |
+| company | `office` | `/office` | — |
 
 `/` Dashboard 不要求權限即可進入，但沒有 `dashboard:read` 時只顯示歡迎頁。
+
+`/office` 虛擬辦公室只用 `office:read`：同公司成員都能進入任何部門的辦公室，不套資料範圍（辦公室不含業務資料）；hub 連線時亦檢查此權限。
+
+既有公司角色（系統與自訂）由 Seeder 一次性補上 `office:read`：以 `audit_logs` 的 `permission.default_granted` 紀錄（`EntityId` 為該權限的 Id）當標記，沒有這筆紀錄才處理；即使沒有任何角色需要補授權（例如全新資料庫）也寫入標記，所以管理員日後收回的授權不會被補回。授權、相關使用者的 `AuthVersion` 遞增與標記在同一個交易內完成。部署這個版本時必須執行一次 Seeder（`--seed-only` 或 `BOOTSTRAP_ON_START=true`），否則既有角色看不到虛擬辦公室。
+
+權限版本變更對辦公室連線的影響：`AuthVersion` 遞增時（改角色權限、部門等），hub 連線收到 `ReauthRequired` 後斷線，前端以 refresh token 換發新 token 再重連，使用者不會被登出，與 REST 收到 401 時的行為一致；帳號、成員身分或公司被停用則送 `ForceDisconnect`，前端登出且不重連。
 
 ### 3.3 內建角色
 
@@ -96,10 +103,10 @@
 |---|---|---|---|
 | `platform-admin` | platform | — | 全部 platform 權限，可切換到任一公司 |
 | `company-admin` | company | company | 公司內全部權限，也是公司角色上限 |
-| `sales-manager` | company | department_tree | 客戶、專案、報價（含 approve、view_cost）、訂單、保固、發票讀取、Dashboard 全員 |
-| `sales` | company | own | 客戶、專案、報價（不含 approve）、訂單、保固讀寫、Dashboard 自己 |
-| `accountant` | company | company | 專案讀取、訂單、發票（含 mark_paid、void）、Dashboard 金額 |
-| `viewer` | company | own | 全部唯讀 |
+| `sales-manager` | company | department_tree | 客戶、專案、報價（含 approve、view_cost）、訂單、保固、發票讀取、Dashboard 全員、虛擬辦公室（`office:read`） |
+| `sales` | company | own | 客戶、專案、報價（不含 approve）、訂單、保固讀寫、Dashboard 自己、虛擬辦公室（`office:read`） |
+| `accountant` | company | company | 專案讀取、訂單、發票（含 mark_paid、void）、Dashboard 金額、虛擬辦公室（`office:read`） |
+| `viewer` | company | own | 全部唯讀（含虛擬辦公室） |
 
 系統內建角色的代碼、名稱不可修改或刪除；公司可自建角色，但不得超過 `company-admin`。
 

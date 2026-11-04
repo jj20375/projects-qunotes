@@ -16,6 +16,7 @@ export type PermissionCode =
   | 'platform.roles'
   | 'platform.permissions'
   | 'dashboard'
+  | 'office'
   | 'clients'
   | 'products'
   | 'projects'
