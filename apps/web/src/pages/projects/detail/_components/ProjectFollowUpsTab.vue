@@ -121,6 +121,11 @@ function search() {
     </div>
 
     <a-skeleton v-if="list.isLoading.value" active />
+    <a-alert v-else-if="list.isError.value" type="error" show-icon :message="(list.error.value as Error | null)?.message || '跟進紀錄載入失敗'">
+      <template #action>
+        <a-button size="small" @click="list.refetch()">重新載入</a-button>
+      </template>
+    </a-alert>
     <a-empty v-else-if="items.length === 0" description="還沒有跟進紀錄" />
     <a-timeline v-else>
       <a-timeline-item v-for="row in items" :key="row.id">
