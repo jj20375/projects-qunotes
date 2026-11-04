@@ -246,7 +246,7 @@ flowchart LR
 |---|---|
 | 欄位 | `dataColumns<Row>()` 建立：`col.accessor('name', { header, enableSorting, meta: { width, align, fixed } })`、`col.display({ id: 'actions', header: '' })`；巢狀欄位用 `col.accessor((row) => row.client.name, { id: 'client', header })` |
 | 後端分頁 | `:pagination="{ page, pageSize, total, showSizeChanger, showTotal }"`，`@change` 收到 `{ page, pageSize, sort, desc }` 後重新查詢 |
-| 後端排序 | 欄位加 `enableSorting: true`，`:sorting="[{ id, desc }]"` 顯示目前排序；整個表頭儲存格可點，鍵盤用裡面的按鈕 |
+| 後端排序 | 欄位加 `enableSorting: true`，`:sorting="[{ id, desc }]"` 顯示目前排序；整個表頭儲存格可點，鍵盤用裡面的按鈕；點擊在升冪與降冪之間切換，不會取消排序 |
 | 自訂儲存格 | `#cell="{ columnId, record, value, index }"`；沒輸出內容的欄位自動顯示欄位值 |
 | 展開列 | 提供 `#expanded="{ record }"` slot，每列左邊出現展開鈕（訂單、出貨、保固、發票的附件） |
 | 勾選列 | `v-model:selected-keys`（列的 row-key 陣列）：左邊出現勾選欄，表頭可勾整頁；已勾選的 key 由頁面保留，可跨頁勾選；`row-selectable` 決定哪些列不能勾（選專案成員的名單） |

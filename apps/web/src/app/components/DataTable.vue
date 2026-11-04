@@ -44,7 +44,7 @@ export interface TablePagination {
 export interface TableChange {
   page: number;
   pageSize: number;
-  /** 排序欄位 id；沒有排序時為 null，由頁面套用預設排序。 */
+  /** 排序欄位 id；頁面沒有傳入 sorting 時為 null，由頁面套用預設排序。點擊表頭只會在升冪與降冪間切換，不會變成 null。 */
   sort: string | null;
   desc: boolean;
 }
@@ -111,7 +111,8 @@ const table = useTable<DataTableFeatures, T>({
   // 沒有伺服器分頁、也沒指定 clientPageSize 時不分頁；否則 TanStack 預設的每頁 20 筆會在沒有分頁器的情況下悄悄截掉後面的列。
   manualPagination: computed(() => !!props.pagination || !props.clientPageSize),
   rowCount: computed(() => (props.pagination ? props.pagination.total : undefined)),
-  enableSortingRemoval: true,
+  // 每頁都有預設排序；允許取消排序會讓預設欄位點了沒反應，所以只在升冪與降冪之間切換。
+  enableSortingRemoval: false,
   sortDescFirst: false,
   autoResetPageIndex: false,
   autoResetExpanded: false,
