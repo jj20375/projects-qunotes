@@ -19,6 +19,7 @@ export type RouteKey =
   | 'clients'
   | 'projects'
   | 'project-detail'
+  | 'followups'
   | 'quotes'
   | 'quote-edit'
   | 'products'
@@ -44,6 +45,7 @@ export const routeManifest: RouteManifestItem[] = [
   { key: 'clients', path: '/clients', title: '客戶', scope: 'company', requirement: { code: 'clients' } },
   { key: 'projects', path: '/projects', title: '專案', scope: 'company', requirement: { code: 'projects' } },
   { key: 'project-detail', path: '/projects/detail', title: '專案明細', menuPath: '/projects', scope: 'company', requirement: { code: 'projects' } },
+  { key: 'followups', path: '/followups', title: '跟進紀錄', scope: 'company', requirement: { code: 'followups' } },
   { key: 'quotes', path: '/quotes', title: '報價單', scope: 'company', requirement: { code: 'quotes' } },
   { key: 'quote-edit', path: '/quotes/edit', title: '報價單', menuPath: '/quotes', scope: 'company', requirement: { code: 'quotes' } },
   { key: 'products', path: '/products', title: '品項價目', scope: 'company', requirement: { code: 'products' } },

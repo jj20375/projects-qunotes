@@ -22,6 +22,7 @@ const views: Record<RouteKey, () => Promise<{ default: Component }>> = {
   clients: () => import('@/pages/clients/_components/ClientsView.vue'),
   projects: () => import('@/pages/projects/_components/ProjectsView.vue'),
   'project-detail': () => import('@/pages/projects/detail/_components/ProjectDetailView.vue'),
+  followups: () => import('@/pages/followups/_components/FollowUpsView.vue'),
   quotes: () => import('@/pages/quotes/_components/QuotesView.vue'),
   'quote-edit': () => import('@/pages/quotes/edit/_components/QuoteEditorView.vue'),
   products: () => import('@/pages/products/_components/ProductsView.vue'),
