@@ -5,12 +5,12 @@ using Microsoft.Extensions.Options;
 namespace QuotePlatform.Api.Infrastructure;
 
 /// <summary>
-/// 可重複執行的 Seeder：權限目錄、系統角色、admin 系統帳號，以及（開發環境）示範公司。
+/// 可重複執行的 Seeder：權限目錄、系統角色、admin 系統帳號，以及（開發／展示環境）smoke 測試用的 demo 公司與對客戶展示用的 showcase 公司。
 /// </summary>
 /// <remarks>
 /// 與美達特不同，admin 密碼只在帳號不存在時設定，之後重跑 Seeder 不會把密碼改回預設值。
 /// </remarks>
-public sealed class QuoteSeeder(QuoteDbContext db, CompanyProvisioner provisioner, CompanyContext companyContext, AuditService audit, IOptions<QuoteOptions> options, ILogger<QuoteSeeder> logger)
+public sealed class QuoteSeeder(QuoteDbContext db, CompanyProvisioner provisioner, CompanyContext companyContext, AuditService audit, ShowcaseSeeder showcase, IOptions<QuoteOptions> options, ILogger<QuoteSeeder> logger)
 {
     public async Task SeedAsync(CancellationToken cancellationToken)
     {
@@ -18,7 +18,9 @@ public sealed class QuoteSeeder(QuoteDbContext db, CompanyProvisioner provisione
         await SeedSystemRolesAsync(cancellationToken);
         await GrantNewPermissionDefaultsAsync(cancellationToken);
         await SeedAdminAsync(cancellationToken);
-        if (options.Value.SeedDemoData) await SeedDemoCompanyAsync(cancellationToken);
+        if (!options.Value.SeedDemoData) return;
+        await SeedDemoCompanyAsync(cancellationToken);
+        await showcase.SeedAsync(cancellationToken);
     }
 
     private async Task SeedPermissionsAsync(CancellationToken cancellationToken)
@@ -209,7 +211,7 @@ public sealed class QuoteSeeder(QuoteDbContext db, CompanyProvisioner provisione
         logger.LogInformation("已建立 admin 系統帳號。");
     }
 
-    /// <summary>示範公司：部門三層、公司管理員、業務主管與業務各一位，密碼同 admin 初始密碼。</summary>
+    /// <summary>smoke 測試用的 demo 公司：部門三層、公司管理員、業務主管與業務各一位，密碼同 admin 初始密碼。只放測試需要的基本資料，業務資料由測試自己建立。</summary>
     private async Task SeedDemoCompanyAsync(CancellationToken cancellationToken)
     {
         if (await db.Companies.AnyAsync(value => value.Slug == "demo", cancellationToken)) return;

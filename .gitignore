@@ -19,3 +19,6 @@ dist/
 # file-server 本機資料
 file-server/data/
 file-server/node_modules/
+
+# 資料庫備份（含客戶資料與密碼雜湊，不進版控）
+backups/

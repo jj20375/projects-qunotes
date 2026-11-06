@@ -4,6 +4,7 @@
 // 啟動模式：
 //   --self-test ：執行權限目錄與權限計算規則的 AssertExamples 後結束；不需資料庫。
 //   --seed-only ：套用 migration 與 Seeder 後結束。
+//   --reset-demo-data ：刪除所有公司與非平台帳號，再由 Seeder 重建 demo 與 showcase 公司後結束；只限 SeedDemoData=true 的環境。
 //   （無旗標）  ：啟動 HTTP 服務。
 //
 // 資料隔離：QuoteDbContext 以 JWT company_id 做 Global Query Filter；
@@ -58,7 +59,8 @@ if (args.SequenceEqual(["--self-test"]))
 }
 
 var seedOnly = args.SequenceEqual(["--seed-only"]);
-var builder = WebApplication.CreateBuilder(args.Where(value => value != "--seed-only").ToArray());
+var resetDemo = args.SequenceEqual(["--reset-demo-data"]);
+var builder = WebApplication.CreateBuilder(args.Where(value => value is not "--seed-only" and not "--reset-demo-data").ToArray());
 var quoteOptions = builder.Configuration.GetSection("Quote").Get<QuoteOptions>() ?? new QuoteOptions();
 builder.Services.Configure<QuoteOptions>(builder.Configuration.GetSection("Quote"));
 // AI 設定檔（供應商、模型、強度）：存檔即重新載入；之後再加一次環境變數，讓 Ai__Ocr__... 仍可覆寫設定檔。
@@ -98,6 +100,8 @@ builder.Services.AddScoped<PermissionGrantService>();
 builder.Services.AddScoped<AuditService>();
 builder.Services.AddScoped<CompanyProvisioner>();
 builder.Services.AddScoped<QuoteSeeder>();
+builder.Services.AddScoped<ShowcaseSeeder>();
+builder.Services.AddScoped<DemoDataReset>();
 builder.Services.AddScoped<IdentityService>();
 builder.Services.AddScoped<CompanyService>();
 builder.Services.AddScoped<DepartmentService>();
@@ -207,15 +211,20 @@ app.MapControllers();
 app.MapHub<OfficeHub>(OfficeHub.Path, options => options.CloseOnAuthenticationExpiration = true);
 
 // migration／Seeder 只看明確的 opt-in 旗標，不綁 ASPNETCORE_ENVIRONMENT（沿用美達特的教訓）。
-if (quoteOptions.MigrateOnStart || quoteOptions.BootstrapOnStart || seedOnly)
+if (quoteOptions.MigrateOnStart || quoteOptions.BootstrapOnStart || seedOnly || resetDemo)
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<QuoteDbContext>();
     await db.Database.MigrateAsync();
-    if (quoteOptions.BootstrapOnStart || seedOnly) await scope.ServiceProvider.GetRequiredService<QuoteSeeder>().SeedAsync(CancellationToken.None);
+    if (resetDemo)
+    {
+        var (companies, users) = await scope.ServiceProvider.GetRequiredService<DemoDataReset>().RunAsync(CancellationToken.None);
+        Console.WriteLine($"已刪除 {companies} 家公司、{users} 個帳號，重建 demo 與 showcase 公司。");
+    }
+    if (quoteOptions.BootstrapOnStart || seedOnly || resetDemo) await scope.ServiceProvider.GetRequiredService<QuoteSeeder>().SeedAsync(CancellationToken.None);
 }
 
-if (seedOnly)
+if (seedOnly || resetDemo)
 {
     Console.WriteLine("初始化完成。");
     return;

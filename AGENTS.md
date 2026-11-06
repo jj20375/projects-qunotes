@@ -48,6 +48,7 @@
 ## 驗證最低要求
 
 - API 變更：`npm run build:api`（0 警告）、`npm run test:api`；涉及授權或資料範圍時再跑 `npm run test:smoke`。
+- smoke 測試會在開發資料庫留下測試資料；跑完後執行 `npm run demo:reset`（先備份），只保留平台帳號、測試用 demo 公司與展示公司 showcase（見 `docs/showcase-demo.md`）。smoke 測試不可使用展示公司的 `sc-*` 帳號。
 - file-server 變更：`npm run test:file`，涉及上傳流程時再跑 `npm run test:smoke:documents`。
 - 前端變更：`npm run check:web`（`astro check` 加 `vue-tsc`，後者才會檢查 `.vue` 的型別）與 `npm run build:web`（Node 24）。
 - 權限目錄異動：同步更新 `Infrastructure/PermissionCatalog.cs`、前端 `src/shared/types/permissions.ts` 的 `PermissionCode`、`src/app/route-manifest.ts` 與 `docs/permissions-and-data-scope.md`。

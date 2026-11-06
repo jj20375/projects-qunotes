@@ -43,7 +43,7 @@
 ```bash
 cp .env.development-api.local.example .env.development-api.local   # 填入密碼與 JWT 金鑰
 npm --prefix apps/web ci
-npm run dev:api:init    # migration + Seeder
+npm run dev:api:init    # migration + Seeder（含對客戶展示用的晴川系統整合）
 npm run dev:api         # http://127.0.0.1:5280
 npm run dev:file        # http://127.0.0.1:5190（需先 cp .env.development-file.local.example .env.development-file.local）
 npm run dev:web         # http://127.0.0.1:4341
@@ -58,5 +58,6 @@ npm run dev:web         # http://127.0.0.1:4341
 - [AGENTS.md](./AGENTS.md)：開發與代理人總則
 - [docs/system-architecture.md](./docs/system-architecture.md)：系統架構、主要流程、API、開發階段
 - [docs/permissions-and-data-scope.md](./docs/permissions-and-data-scope.md)：身分、權限、個人權限與資料範圍
+- [docs/showcase-demo.md](./docs/showcase-demo.md)：對客戶展示的帳號、資料與展示流程；`npm run demo:reset` 重置
 - [docs/database-planning.md](./docs/database-planning.md)：資料庫規劃與 ER 圖
 - [docs/database-schema.sql](./docs/database-schema.sql)：MariaDB DDL 草稿

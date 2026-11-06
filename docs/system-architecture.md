@@ -472,14 +472,17 @@ FLUSH PRIVILEGES;
 ```bash
 nvm use                      # Node 24（Astro 7 需要）
 npm --prefix apps/web ci     # 第一次
-npm run dev:api:init         # 套用 migration + Seeder（admin 與示範公司 demo）
+npm run dev:api:init         # 套用 migration + Seeder（admin、smoke 測試用的 demo 公司、對客戶展示用的 showcase 公司）
+npm run demo:reset           # 刪除所有公司與非平台帳號，重建 demo 與 showcase（只限 SeedDemoData=true；先備份）
 npm run dev:api              # API：http://127.0.0.1:5280
 npm run dev:file             # file-server：http://127.0.0.1:5190（本機檔案系統儲存，資料在 file-server/data）
 npm run dev:web              # 後台：http://127.0.0.1:4341（/api、/files 由 Vite proxy 轉給 API 與 file-server）
 npm run dev:web:lan          # 同上，但監聽 0.0.0.0，讓區網其他裝置以 http://<區網 IP>:4341 連線；API、file-server 仍只聽 127.0.0.1
 ```
 
-- 本機設定在根目錄 `.env.development-api.local`（不進版控，範本 `.env.development-api.local.example`）。`Quote__BootstrapAdminPassword` 是 `admin`、`demo-admin`、`demo-manager`、`demo-sales` 的初始密碼，只在帳號不存在時使用。
+- 本機設定在根目錄 `.env.development-api.local`（不進版控，範本 `.env.development-api.local.example`）。`Quote__BootstrapAdminPassword` 是 `admin`、`demo-*` 與展示公司 `sc-*` 帳號的初始密碼，只在帳號不存在時使用。
+- 資料分兩家公司：`demo`（示範工程）只給 smoke 測試用，只有帳號與部門；`showcase`（晴川系統整合）是對客戶展示用的完整資料，smoke 測試不會碰它。展示帳號、資料內容與展示流程見 [showcase-demo.md](./showcase-demo.md)。
+- smoke 測試會在 demo 公司與自己建立的公司裡留下資料，跑完後執行 `npm run demo:reset` 清除（同時把展示公司的日期更新到今天）。
 - 在 AI 代理人的 shell（環境變數有 `AI_AGENT`）裡執行 `astro dev`，Astro 7 會改用代理人模式並忽略 `server.port`；需要時以 `env -u AI_AGENT npm run dev:web` 啟動。
 - 驗證：
   - `npm run build:api`：0 警告
@@ -487,7 +490,7 @@ npm run dev:web:lan          # 同上，但監聽 0.0.0.0，讓區網其他裝�
   - `npm run test:smoke`：API 端對端 17 項（登入、refresh 輪替與重用偵測、平台切換公司、公司隔離、個人權限、防越權、AuthVersion 失效、部門移動、停用公司）。需以 `Quote__LoginCaptchaEnabled=false` 啟動 API，且會在資料庫留下測試資料（`t-*` 公司、`sales-*` 帳號、`custom-*` 角色）。
   - `npm run test:smoke:projects`：第二階段 16 項（客戶與聯絡人、資料範圍 own／department_tree／company、viewer 成員只能讀、狀態／時間／金額搜尋、狀態流程、刪除規則、8 筆併發建立不重號、公司隔離）。前置條件同上，會留下 `UI`／時間戳記命名的測試客戶與專案。
   - `npm run test:smoke:roles`：角色 × 部門矩陣 9 項。在獨立的測試部門樹（總部→甲課／乙課、稽核）裡，驗證業務、業務主管、會計、唯讀、公司管理員與「本部門」自訂角色各自看得到的客戶、專案、報價與訂單，唯讀與會計的寫入限制，個別資料範圍覆寫與成員換部門。前置條件同上，會留下以執行代號命名的測試部門、客戶與專案，測試帳號結束時停用。
-  - `npm run test:smoke:quotes`：第三階段 14 項（計算與含稅反推、客戶快照、送審／退回／核准／送出／接受／拒絕、改版與版次、接受回寫專案、PDF／Excel 匯出、Excel 往返匯入、對照設定匯入、資料範圍、品項成本可見性、客戶 Excel 匯出入）。
+  - `npm run test:smoke:quotes`：第三階段 16 項（計算與含稅反推、客戶快照、送審／退回／核准／送出／接受／拒絕、改版與版次、接受回寫專案、PDF／Excel 匯出、Excel 往返匯入、對照設定匯入、資料範圍、品項成本可見性、客戶 Excel 匯出入、未得標專案重新報價回到報價中、以客戶簡稱搜尋報價）。
   - `npm run test:smoke:quote-format`：報價單格式 8 項（條款整理 API、整段貼上儲存後條列化、Excel 往返保留條款、公司預設條款帶入新報價、單號規則與不合法規則、Logo 上傳／預覽／PDF 內含圖片、移除 Logo）。另需 file-server 已啟動；測試會暫時修改 demo 公司的公司參數，結束時還原。
   - `npm run test:smoke:documents`：第四階段 13 項（訂單／保固／發票、收款與作廢、刪除後號碼可重用、專案摘要、附件上傳下載與 Range、檔頭／大小／token 對調檢查、資料範圍、回呼密鑰）。另需 file-server 已啟動。
   - `npm run test:smoke:ocr`：第六階段 10 項（另有選用的熱更新 1 項；送給供應商的請求格式、模型與強度、預覽轉換與提醒、建立報價、PDF、格式／大小檢查、拒絕／金鑰錯誤／忙碌／結果壞掉、權限）。測試自己在 5299 埠啟動模擬端點（同時模擬 Claude 與 Gemini 的格式），不需要真的金鑰、不產生費用；依 API 的設定測其中一家，兩家請各跑一次：
