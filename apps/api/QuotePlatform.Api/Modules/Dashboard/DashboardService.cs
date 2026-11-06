@@ -193,50 +193,100 @@ public sealed class DashboardService(QuoteDbContext db, ProjectAccessService acc
         return grouped.Select(value => new { value.OwnerUserId, name = names.GetValueOrDefault(value.OwnerUserId) ?? "—", amount = canAmount ? value.Amount : (decimal?)null, value.Count });
     }
 
-    private async Task<object> ExpiringWarrantiesAsync(IQueryable<Project> projects, DateOnly today, CancellationToken cancellationToken)
+    /// <summary>到期日在今天起 90 天內的保固，與可見專案相接；Summary 的件數和分頁清單共用同一個條件。</summary>
+    private IQueryable<WarrantyProject> ExpiringWarrantyQuery(IQueryable<Project> projects, DateOnly today)
     {
         var until = today.AddDays(90);
-        var query = db.ProjectWarranties.AsNoTracking()
+        return db.ProjectWarranties.AsNoTracking()
             .Where(value => value.EndDate >= today && value.EndDate <= until)
-            .Join(projects, warranty => warranty.ProjectId, project => project.Id, (warranty, project) => new { warranty, project });
-        return new
-        {
-            count = await query.CountAsync(cancellationToken),
-            items = await query.OrderBy(value => value.warranty.EndDate).Take(10)
-                .Select(value => new { value.warranty.Id, value.warranty.WarrantyNo, value.warranty.Subject, value.warranty.EndDate, projectId = value.project.Id, value.project.ProjectNo, projectName = value.project.Name, clientName = value.project.Client.Name })
-                .ToListAsync(cancellationToken),
-        };
+            .Join(projects, warranty => warranty.ProjectId, project => project.Id, (warranty, project) => new WarrantyProject { Warranty = warranty, Project = project });
     }
+
+    /// <summary>已開立且尚未收齊的發票，與可見專案相接；Summary 的彙總和分頁清單共用同一個條件。</summary>
+    private IQueryable<InvoiceProject> ReceivableQuery(IQueryable<Project> projects) =>
+        db.ProjectInvoices.AsNoTracking()
+            .Where(value => value.Status == "issued" && value.PaymentStatus != "paid")
+            .Join(projects, invoice => invoice.ProjectId, project => project.Id, (invoice, project) => new InvoiceProject { Invoice = invoice, Project = project });
+
+    private async Task<object> ExpiringWarrantiesAsync(IQueryable<Project> projects, DateOnly today, CancellationToken cancellationToken) =>
+        new { count = await ExpiringWarrantyQuery(projects, today).CountAsync(cancellationToken) };
 
     private async Task<object> ReceivablesAsync(IQueryable<Project> projects, DateOnly today, bool canAmount, CancellationToken cancellationToken)
     {
-        var query = db.ProjectInvoices.AsNoTracking()
-            .Where(value => value.Status == "issued" && value.PaymentStatus != "paid")
-            .Join(projects, invoice => invoice.ProjectId, project => project.Id, (invoice, project) => new { invoice, project });
-        var all = await query.Select(value => new { Outstanding = value.invoice.TotalAmount - value.invoice.PaidAmount, value.invoice.DueDate }).ToListAsync(cancellationToken);
-        var items = await query
-            .OrderBy(value => value.invoice.DueDate == null).ThenBy(value => value.invoice.DueDate)
-            .Take(10)
-            .Select(value => new { value.invoice.Id, value.invoice.InvoiceNo, value.invoice.DueDate, value.invoice.TotalAmount, value.invoice.PaidAmount, projectId = value.project.Id, value.project.ProjectNo, projectName = value.project.Name, clientName = value.project.Client.Name })
-            .ToListAsync(cancellationToken);
+        var all = await ReceivableQuery(projects).Select(value => new { Outstanding = value.Invoice.TotalAmount - value.Invoice.PaidAmount, value.Invoice.DueDate }).ToListAsync(cancellationToken);
         return new
         {
             count = all.Count,
             overdueCount = all.Count(value => value.DueDate < today),
             outstanding = canAmount ? all.Sum(value => value.Outstanding) : (decimal?)null,
             overdue = canAmount ? all.Where(value => value.DueDate < today).Sum(value => value.Outstanding) : (decimal?)null,
-            items = items.Select(value => new
-            {
-                value.Id,
-                value.InvoiceNo,
-                value.DueDate,
-                outstanding = canAmount ? value.TotalAmount - value.PaidAmount : (decimal?)null,
-                isOverdue = value.DueDate < today,
-                value.projectId,
-                value.ProjectNo,
-                value.projectName,
-                value.clientName,
-            }),
         };
     }
+
+    /// <summary>應收帳款清單（分頁）：依到期日由近到遠，沒有到期日的排最後；篩選條件與 Summary 相同。</summary>
+    public async Task<ServiceResult<object>> ReceivablesPageAsync(RequestScope scope, DashboardQuery filter, ListQuery list, CancellationToken cancellationToken)
+    {
+        var projects = await FilteredProjectsAsync(scope, filter, cancellationToken);
+        if (projects is null) return ServiceResult<object>.BadRequest("部門不在您的資料範圍內。");
+        var canAmount = scope.HasOption("dashboard", "view_amount");
+        var today = BusinessTime.Today;
+        var query = ReceivableQuery(projects);
+        if (list.KeywordText is string keyword)
+        {
+            query = query.Where(value => value.Invoice.InvoiceNo.Contains(keyword) || value.Project.Name.Contains(keyword) || value.Project.Client.Name.Contains(keyword));
+        }
+        var total = await query.CountAsync(cancellationToken);
+        var rows = await query
+            .OrderBy(value => value.Invoice.DueDate == null).ThenBy(value => value.Invoice.DueDate).ThenBy(value => value.Invoice.InvoiceNo)
+            .Skip(list.Skip).Take(list.PageSizeValue)
+            .Select(value => new { value.Invoice.Id, value.Invoice.InvoiceNo, value.Invoice.DueDate, value.Invoice.TotalAmount, value.Invoice.PaidAmount, projectId = value.Project.Id, value.Project.ProjectNo, projectName = value.Project.Name, clientName = value.Project.Client.Name })
+            .ToListAsync(cancellationToken);
+        var items = rows.Select(value => new
+        {
+            value.Id,
+            value.InvoiceNo,
+            value.DueDate,
+            outstanding = canAmount ? value.TotalAmount - value.PaidAmount : (decimal?)null,
+            isOverdue = value.DueDate < today,
+            value.projectId,
+            value.ProjectNo,
+            value.projectName,
+            value.clientName,
+        });
+        return ServiceResult<object>.Ok(new { total, page = list.PageValue, pageSize = list.PageSizeValue, items });
+    }
+
+    /// <summary>90 天內到期的保固清單（分頁）：依到期日由近到遠；篩選條件與 Summary 相同。</summary>
+    public async Task<ServiceResult<object>> ExpiringWarrantiesPageAsync(RequestScope scope, DashboardQuery filter, ListQuery list, CancellationToken cancellationToken)
+    {
+        var projects = await FilteredProjectsAsync(scope, filter, cancellationToken);
+        if (projects is null) return ServiceResult<object>.BadRequest("部門不在您的資料範圍內。");
+        var query = ExpiringWarrantyQuery(projects, BusinessTime.Today);
+        if (list.KeywordText is string keyword)
+        {
+            query = query.Where(value => value.Warranty.Subject.Contains(keyword) || value.Warranty.WarrantyNo.Contains(keyword) || value.Project.Name.Contains(keyword) || value.Project.Client.Name.Contains(keyword));
+        }
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderBy(value => value.Warranty.EndDate).ThenBy(value => value.Warranty.WarrantyNo)
+            .Skip(list.Skip).Take(list.PageSizeValue)
+            .Select(value => new { value.Warranty.Id, value.Warranty.WarrantyNo, value.Warranty.Subject, value.Warranty.EndDate, projectId = value.Project.Id, value.Project.ProjectNo, projectName = value.Project.Name, clientName = value.Project.Client.Name })
+            .ToListAsync(cancellationToken);
+        return ServiceResult<object>.Ok(new { total, page = list.PageValue, pageSize = list.PageSizeValue, items });
+    }
+}
+
+// 匿名型別無法跨方法傳遞，所以相接結果用具名類別；EF 只認得成員初始化，不能改成含建構子的 record。
+/// <summary>保固與其所屬專案的相接結果。</summary>
+internal sealed class WarrantyProject
+{
+    public required ProjectWarranty Warranty { get; init; }
+    public required Project Project { get; init; }
+}
+
+/// <summary>發票與其所屬專案的相接結果。</summary>
+internal sealed class InvoiceProject
+{
+    public required ProjectInvoice Invoice { get; init; }
+    public required Project Project { get; init; }
 }

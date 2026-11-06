@@ -145,7 +145,7 @@ flowchart LR
 - 回傳：12 個月趨勢與去年同月、4 季與去年同季、年度累計／去年同期／成長率、本季、本月、三種口徑的年度合計
 - 案件數：各狀態專案數、進行中案件、本年度新增（含每月）、成交率（本年度得標 ÷（得標＋未得標），未得標以狀態紀錄判斷）
 - 業務排行（前 10 名，需 `dashboard:view_all_staff`）
-- 90 天內到期的保固（需 `warranties:read`）、未收款發票與逾期（需 `invoices:read`）
+- 90 天內到期的保固（需 `warranties:read`）、未收款發票與逾期（需 `invoices:read`）：summary 只回件數與金額彙總；明細清單改走分頁 API `GET /api/dashboard/receivables`、`GET /api/dashboard/expiring-warranties`（`departmentId`、`ownerUserId`、`keyword`、`page`、`pageSize`，回 `{ total, page, pageSize, items }`），依到期日由近到遠排序
 - 沒有 `dashboard:view_amount` 時所有金額為 `null`，前端只顯示件數
 - `departmentId` 篩選含下層部門，且仍受資料範圍限制；`ownerUserId` 篩選專案負責人
 
@@ -358,6 +358,7 @@ company scope（公司一律取自 JWT，路由不帶 companyId）
 
 ```
 ✅ GET /api/dashboard/summary?year=&metric=&departmentId=&ownerUserId=          戰情 Dashboard（見 6.4）
+✅ GET /api/dashboard/receivables|expiring-warranties?page=&pageSize=&keyword=  Dashboard 應收／到期保固分頁清單
 ✅ GET|PUT /api/admin/settings                                                  公司參數（見 6.5）
 ```
 

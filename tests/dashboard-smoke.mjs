@@ -155,7 +155,23 @@ await step('業務排行、到期保固、應收帳款（逾期）', async () =>
   assert.equal(data.receivables.count, 1);
   assert.equal(data.receivables.overdueCount, 1);
   assert.equal(data.receivables.outstanding, 84000);
-  assert.equal(data.receivables.items[0].isOverdue, true);
+
+  // 清單走分頁 API：total、頁碼、關鍵字都由後端處理。
+  const receivables = await ok(call('GET', '/api/dashboard/receivables?page=1&pageSize=10', { token: admin }));
+  assert.equal(receivables.total, 1);
+  assert.equal(receivables.items[0].isOverdue, true);
+  assert.equal(receivables.items[0].outstanding, 84000);
+  const receivablesPage2 = await ok(call('GET', '/api/dashboard/receivables?page=2&pageSize=1', { token: admin }));
+  assert.equal(receivablesPage2.total, 1, '超過最後一頁時 total 仍是全部筆數');
+  assert.equal(receivablesPage2.items.length, 0);
+  assert.equal((await ok(call('GET', `/api/dashboard/receivables?keyword=${encodeURIComponent(receivables.items[0].invoiceNo)}`, { token: admin }))).total, 1);
+  assert.equal((await ok(call('GET', '/api/dashboard/receivables?keyword=不存在的關鍵字', { token: admin }))).total, 0);
+  const warranties = await ok(call('GET', '/api/dashboard/expiring-warranties?page=1&pageSize=10', { token: admin }));
+  assert.equal(warranties.total, 1);
+  assert.equal(warranties.items[0].warrantyNo, 'W1');
+  assert.equal((await ok(call('GET', '/api/dashboard/expiring-warranties?keyword=主機', { token: admin }))).total, 1);
+  assert.equal((await ok(call('GET', '/api/dashboard/expiring-warranties?keyword=不存在的關鍵字', { token: admin }))).total, 0);
+  assert.equal((await ok(call('GET', '/api/dashboard/expiring-warranties?page=2&pageSize=1', { token: admin }))).items.length, 0);
 });
 
 await step('部門篩選：業務部不含財務部的專案', async () => {

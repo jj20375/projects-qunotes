@@ -4,14 +4,21 @@
  * 戰情 Dashboard（公司範圍）：業績 KPI、月趨勢（今年 vs 去年）、季度、案件數與成交率、業務排行、到期保固、應收帳款。
  * 數字依登入者的資料範圍計算；沒有「檢視金額」權限時只顯示件數。
  */
-import { computed, reactive, ref } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { keepPreviousData, useQuery } from '@tanstack/vue-query';
 import DataTable from '@/app/components/DataTable.vue';
 import EChart from '@/app/components/EChart.vue';
 import UserSelect from '@/app/components/UserSelect.vue';
 import { useMe } from '@/app/composables/use-me';
 import { listDirectoryDepartmentsApi } from '@/shared/services/business-service';
-import { getDashboardApi, type DashboardMetric, type DashboardSummary } from '@/shared/services/dashboard-service';
+import {
+  getDashboardApi,
+  listDashboardExpiringWarrantiesApi,
+  listDashboardReceivablesApi,
+  type DashboardMetric,
+  type DashboardReceivable,
+  type DashboardWarranty,
+} from '@/shared/services/dashboard-service';
 import { dataColumns } from '@/shared/table/data-table';
 import { PROJECT_STATUSES } from '@/shared/types/business';
 import { DATA_SCOPE_LABELS } from '@/shared/types/permissions';
@@ -21,6 +28,30 @@ const { me, canOption } = useMe();
 const filters = reactive({ year: undefined as number | undefined, metric: 'accepted' as DashboardMetric, departmentId: undefined as string | undefined, ownerUserId: undefined as string | undefined });
 const summary = useQuery({ queryKey: ['dashboard', filters], queryFn: () => getDashboardApi({ ...filters }), placeholderData: keepPreviousData });
 const data = computed(() => summary.data.value);
+
+// 兩張清單各自分頁，部門、負責業務篩選變動時回到第一頁。
+const receivablePaging = reactive({ page: 1, pageSize: 10 });
+const warrantyPaging = reactive({ page: 1, pageSize: 10 });
+watch(
+  () => [filters.departmentId, filters.ownerUserId],
+  () => {
+    receivablePaging.page = 1;
+    warrantyPaging.page = 1;
+  },
+);
+const listFilter = computed(() => ({ departmentId: filters.departmentId, ownerUserId: filters.ownerUserId }));
+const receivables = useQuery({
+  queryKey: ['dashboard-receivables', listFilter, receivablePaging],
+  queryFn: () => listDashboardReceivablesApi({ ...listFilter.value, ...receivablePaging }),
+  enabled: computed(() => !!data.value?.receivables),
+  placeholderData: keepPreviousData,
+});
+const warranties = useQuery({
+  queryKey: ['dashboard-warranties', listFilter, warrantyPaging],
+  queryFn: () => listDashboardExpiringWarrantiesApi({ ...listFilter.value, ...warrantyPaging }),
+  enabled: computed(() => !!data.value?.expiringWarranties),
+  placeholderData: keepPreviousData,
+});
 
 const showAllStaff = computed(() => canOption('dashboard', 'view_all_staff'));
 const canFilterDepartment = computed(() => ['company', 'department_tree'].includes(me.value?.scope.dataScope ?? ''));
@@ -51,8 +82,8 @@ interface MonthRow {
   thisYear: number | null;
   lastYear: number | null;
 }
-type ReceivableRow = NonNullable<DashboardSummary['receivables']>['items'][number];
-type WarrantyRow = NonNullable<DashboardSummary['expiringWarranties']>['items'][number];
+type ReceivableRow = DashboardReceivable;
+type WarrantyRow = DashboardWarranty;
 
 const monthRows = computed<MonthRow[]>(() => monthNames.value.map((month, index) => ({ month, thisYear: data.value?.trend.thisYear[index] ?? null, lastYear: data.value?.trend.lastYear[index] ?? null })));
 const monthCol = dataColumns<MonthRow>();
@@ -266,7 +297,16 @@ const growthText = computed(() => {
       <a-row :gutter="[16, 16]">
         <a-col v-if="data.receivables" :xs="24" :lg="12">
           <a-card :bordered="false" :title="`應收帳款（${data.receivables.count} 張）`">
-            <DataTable :data="data.receivables.items" :columns="receivableColumns" row-key="id" size="small" :scroll-x="480">
+            <DataTable
+              :data="receivables.data.value?.items ?? []"
+              :columns="receivableColumns"
+              row-key="id"
+              size="small"
+              :scroll-x="480"
+              :loading="receivables.isFetching.value"
+              :pagination="{ page: receivablePaging.page, pageSize: receivablePaging.pageSize, total: receivables.data.value?.total ?? 0 }"
+              @change="(state) => Object.assign(receivablePaging, { page: state.page, pageSize: state.pageSize })"
+            >
               <template #cell="{ columnId, record }">
                 <template v-if="columnId === 'projectName'">
                   <a :href="`/projects/detail?id=${record.projectId}`">{{ record.projectName }}</a>
@@ -283,7 +323,16 @@ const growthText = computed(() => {
         </a-col>
         <a-col v-if="data.expiringWarranties" :xs="24" :lg="12">
           <a-card :bordered="false" :title="`90 天內到期的保固（${data.expiringWarranties.count} 件）`">
-            <DataTable :data="data.expiringWarranties.items" :columns="warrantyColumns" row-key="id" size="small" :scroll-x="480">
+            <DataTable
+              :data="warranties.data.value?.items ?? []"
+              :columns="warrantyColumns"
+              row-key="id"
+              size="small"
+              :scroll-x="480"
+              :loading="warranties.isFetching.value"
+              :pagination="{ page: warrantyPaging.page, pageSize: warrantyPaging.pageSize, total: warranties.data.value?.total ?? 0 }"
+              @change="(state) => Object.assign(warrantyPaging, { page: state.page, pageSize: state.pageSize })"
+            >
               <template #cell="{ columnId, record }">
                 <template v-if="columnId === 'subject'">{{ record.subject }}<div class="muted">{{ record.warrantyNo }}</div></template>
                 <template v-else-if="columnId === 'projectName'">

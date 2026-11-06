@@ -20,4 +20,26 @@ public sealed class DashboardController(DashboardService service) : ScopedContro
     [HttpGet("summary")]
     public async Task<ActionResult> Summary([FromQuery] DashboardQuery query, CancellationToken cancellationToken) =>
         TryCompany("dashboard", "read", out var scope) ? ToResult(await service.SummaryAsync(scope, query, cancellationToken)) : Forbidden();
+
+    /// <summary>
+    /// 取得應收帳款（已開立且未收齊的發票）分頁清單；需另具備 invoices:read。
+    /// </summary>
+    /// <param name="filter">與 Summary 相同的部門、負責業務篩選。</param>
+    /// <param name="list">關鍵字（發票號碼、專案、客戶）與分頁。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回 { total, page, pageSize, items }。</returns>
+    [HttpGet("receivables")]
+    public async Task<ActionResult> Receivables([FromQuery] DashboardQuery filter, [FromQuery] ListQuery list, CancellationToken cancellationToken) =>
+        TryCompany("dashboard", "read", out var scope) && scope.Has("invoices", "read") ? ToResult(await service.ReceivablesPageAsync(scope, filter, list, cancellationToken)) : Forbidden();
+
+    /// <summary>
+    /// 取得 90 天內到期保固的分頁清單；需另具備 warranties:read。
+    /// </summary>
+    /// <param name="filter">與 Summary 相同的部門、負責業務篩選。</param>
+    /// <param name="list">關鍵字（保固主旨、編號、專案、客戶）與分頁。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回 { total, page, pageSize, items }。</returns>
+    [HttpGet("expiring-warranties")]
+    public async Task<ActionResult> ExpiringWarranties([FromQuery] DashboardQuery filter, [FromQuery] ListQuery list, CancellationToken cancellationToken) =>
+        TryCompany("dashboard", "read", out var scope) && scope.Has("warranties", "read") ? ToResult(await service.ExpiringWarrantiesPageAsync(scope, filter, list, cancellationToken)) : Forbidden();
 }

@@ -42,17 +42,13 @@ export interface DashboardSummary {
   /** 業務人員業績排行（無權限時為 null） */
   ranking: { ownerUserId: string; name: string; amount: Money; count: number }[] | null;
   /** 即將到期保固提醒 */
-  expiringWarranties: {
-    count: number;
-    items: { id: string; warrantyNo: string; subject: string; endDate: string; projectId: string; projectNo: string; projectName: string; clientName: string }[];
-  } | null;
+  expiringWarranties: { count: number } | null;
   /** 應收未收與逾期發票提醒 */
   receivables: {
     count: number;
     overdueCount: number;
     outstanding: Money;
     overdue: Money;
-    items: { id: string; invoiceNo: string; dueDate: string | null; outstanding: Money; isOverdue: boolean; projectId: string; projectNo: string; projectName: string; clientName: string }[];
   } | null;
 }
 
@@ -64,6 +60,66 @@ export interface DashboardSummary {
  */
 export function getDashboardApi(query: { year?: number; metric: DashboardMetric; departmentId?: string; ownerUserId?: string }): Promise<DashboardSummary> {
   return apiRequest<DashboardSummary>('/api/dashboard/summary', { query });
+}
+
+/** 應收帳款清單的一列 */
+export interface DashboardReceivable {
+  id: string;
+  invoiceNo: string;
+  dueDate: string | null;
+  outstanding: Money;
+  isOverdue: boolean;
+  projectId: string;
+  projectNo: string;
+  projectName: string;
+  clientName: string;
+}
+
+/** 即將到期保固清單的一列 */
+export interface DashboardWarranty {
+  id: string;
+  warrantyNo: string;
+  subject: string;
+  endDate: string;
+  projectId: string;
+  projectNo: string;
+  projectName: string;
+  clientName: string;
+}
+
+/** Dashboard 清單的查詢條件：與 Summary 相同的部門、負責業務篩選，加上分頁。 */
+export type DashboardListQuery = {
+  departmentId?: string;
+  ownerUserId?: string;
+  page: number;
+  pageSize: number;
+};
+
+interface DashboardPage<T> {
+  total: number;
+  page: number;
+  pageSize: number;
+  items: T[];
+}
+
+/**
+ * 取得應收帳款（已開立且未收齊的發票）分頁清單
+ *
+ * @param query 部門、負責業務篩選與分頁
+ * @returns 傳回 { total, page, pageSize, items }
+ */
+export function listDashboardReceivablesApi(query: DashboardListQuery): Promise<DashboardPage<DashboardReceivable>> {
+  return apiRequest<DashboardPage<DashboardReceivable>>('/api/dashboard/receivables', { query });
+}
+
+/**
+ * 取得 90 天內到期保固的分頁清單
+ *
+ * @param query 部門、負責業務篩選與分頁
+ * @returns 傳回 { total, page, pageSize, items }
+ */
+export function listDashboardExpiringWarrantiesApi(query: DashboardListQuery): Promise<DashboardPage<DashboardWarranty>> {
+  return apiRequest<DashboardPage<DashboardWarranty>>('/api/dashboard/expiring-warranties', { query });
 }
 
 /**
