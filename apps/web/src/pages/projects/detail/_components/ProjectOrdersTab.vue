@@ -12,6 +12,7 @@ import RemoteSelect, { type RemoteOption } from '@/app/components/RemoteSelect.v
 import { dataColumns } from '@/shared/table/data-table';
 import AttachmentList from '@/app/components/AttachmentList.vue';
 import QuotePreviewDrawer from '@/app/components/QuotePreviewDrawer.vue';
+import { useAutoTax } from '@/app/composables/use-auto-tax';
 import type { ProjectDetail } from '@/shared/services/business-service';
 import { deleteOrderApi, listOrdersApi, saveOrderApi, type Order } from '@/shared/services/document-service';
 import { searchQuotesApi, type QuoteRow } from '@/shared/services/quote-service';
@@ -50,16 +51,22 @@ const formOpen = ref(false);
 const form = reactive<Partial<Order> & { date?: Dayjs }>({});
 const saving = ref(false);
 
+// 訂單金額與報價不同（例如只下部分品項）時，稅額要跟著未稅金額重算。
+const tax = useAutoTax(() => form.amount, (value) => (form.taxAmount = value));
+
 function open(row: Order | null) {
   Object.keys(form).forEach((key) => delete (form as Record<string, unknown>)[key]);
   Object.assign(form, row ? { ...row, date: dayjs(row.orderDate) } : { date: dayjs(), status: 'received', taxAmount: 0 });
+  tax.reset(form.amount, form.taxAmount);
   formOpen.value = true;
 }
 
-/** 依接受的報價帶入金額（未稅、稅額）。 */
+/** 依接受的報價帶入金額（未稅、稅額），並改用報價的稅率重算。 */
 function fillFromQuote(raw: unknown) {
   const quote = raw as QuoteRow | undefined;
-  if (quote && !form.amount) Object.assign(form, { amount: quote.netAmount, taxAmount: quote.total - quote.netAmount });
+  if (!quote) return;
+  if (!form.amount) Object.assign(form, { amount: quote.netAmount, taxAmount: quote.total - quote.netAmount });
+  tax.useRateOf(quote.netAmount, quote.total - quote.netAmount);
 }
 
 function onTableChange(change: TableChange) {
@@ -158,7 +165,11 @@ const columns = [
           </a-form-item>
         </a-col>
         <a-col :span="12"><a-form-item label="未稅金額" required><a-input-number v-model:value="form.amount" :min="0" style="width: 100%" /></a-form-item></a-col>
-        <a-col :span="12"><a-form-item label="稅額"><a-input-number v-model:value="form.taxAmount" :min="0" style="width: 100%" /></a-form-item></a-col>
+        <a-col :span="12">
+          <a-form-item label="稅額" extra="依未稅金額自動計算，可手動調整">
+            <a-input-number v-model:value="form.taxAmount" :min="0" style="width: 100%" @change="tax.markEdited()" />
+          </a-form-item>
+        </a-col>
         <a-col :span="12">
           <a-form-item label="狀態">
             <a-select v-model:value="form.status" :options="Object.entries(statusLabels).map(([value, [label]]) => ({ value, label }))" />

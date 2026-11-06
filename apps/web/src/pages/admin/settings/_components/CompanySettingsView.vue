@@ -175,7 +175,7 @@ async function removeLogo() {
           <a-col :span="24">
             <a-form-item label="報價單號規則" name="quoteNumberPattern">
               <a-input v-model:value="form.quoteNumberPattern" :maxlength="40" style="max-width: 320px" />
-              <div class="pattern-preview">下一張範例：<strong>{{ numberPreview }}</strong></div>
+              <div class="pattern-preview">格式範例（流水號以 1 示意）：<strong>{{ numberPreview }}</strong></div>
               <div class="hint">
                 代號：{yyyy} 西元年、{yy} 年後兩碼、{MM} 月、{dd} 日、{seq:4} 流水號（補到 4 碼）。一定要有流水號；有 {dd} 每天重新編號、有 {MM} 每月、只有年份每年。
               </div>

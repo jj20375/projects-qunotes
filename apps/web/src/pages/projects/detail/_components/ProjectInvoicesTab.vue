@@ -15,6 +15,7 @@ import { dataColumns } from '@/shared/table/data-table';
 import AttachmentList from '@/app/components/AttachmentList.vue';
 import InvoicePreviewDrawer from '@/app/components/InvoicePreviewDrawer.vue';
 import { useMe } from '@/app/composables/use-me';
+import { useAutoTax } from '@/app/composables/use-auto-tax';
 import type { ProjectDetail } from '@/shared/services/business-service';
 import { deleteInvoiceApi, listInvoicesApi, listOrdersApi, lookupInvoiceNoApi, recordPaymentApi, saveInvoiceApi, voidInvoiceApi, type Invoice, type InvoiceLookup, type Order } from '@/shared/services/document-service';
 import { formatMoney } from '@/shared/types/business';
@@ -81,17 +82,23 @@ watch(
   },
 );
 
+// 分期開票會把銷售額改成部分金額，稅額要跟著重算，否則會沿用整張訂單的稅額。
+const tax = useAutoTax(() => form.salesAmount, (value) => (form.taxAmount = value));
+
 function open(row: Invoice | null) {
   duplicate.value = null;
   Object.keys(form).forEach((key) => delete (form as Record<string, unknown>)[key]);
   Object.assign(form, row ? { ...row, date: dayjs(row.invoiceDate), due: row.dueDate ? dayjs(row.dueDate) : null } : { date: dayjs(), invoiceType: 'triplicate', taxAmount: 0, due: dayjs().add(30, 'day') });
+  tax.reset(form.salesAmount, form.taxAmount);
   formOpen.value = true;
 }
 
-/** 選訂單時帶入未稅與稅額。 */
+/** 選訂單時帶入未稅與稅額，並改用訂單的稅率重算。 */
 function fillFromOrder(raw: unknown) {
   const order = raw as Order | undefined;
-  if (order && !form.salesAmount) Object.assign(form, { salesAmount: order.amount, taxAmount: order.taxAmount });
+  if (!order) return;
+  if (!form.salesAmount) Object.assign(form, { salesAmount: order.amount, taxAmount: order.taxAmount });
+  tax.useRateOf(order.amount, order.taxAmount);
 }
 
 async function save() {
@@ -237,7 +244,11 @@ const columns = [
         <a-col :span="12"><a-form-item label="買受人" extra="留空帶客戶發票抬頭"><a-input v-model:value="form.buyerName" /></a-form-item></a-col>
         <a-col :span="12"><a-form-item label="買受人統編"><a-input v-model:value="form.buyerTaxId" :maxlength="8" /></a-form-item></a-col>
         <a-col :span="12"><a-form-item label="銷售額（未稅）" required><a-input-number v-model:value="form.salesAmount" :min="0" style="width: 100%" /></a-form-item></a-col>
-        <a-col :span="12"><a-form-item label="稅額"><a-input-number v-model:value="form.taxAmount" :min="0" style="width: 100%" /></a-form-item></a-col>
+        <a-col :span="12">
+          <a-form-item label="稅額" extra="依銷售額自動計算，可手動調整">
+            <a-input-number v-model:value="form.taxAmount" :min="0" style="width: 100%" @change="tax.markEdited()" />
+          </a-form-item>
+        </a-col>
         <a-col :span="24"><a-form-item label="總計"><strong>{{ formatMoney((form.salesAmount ?? 0) + (form.taxAmount ?? 0)) }}</strong></a-form-item></a-col>
         <a-col :span="24"><a-form-item label="備註"><a-textarea v-model:value="form.note" :rows="2" /></a-form-item></a-col>
       </a-row>
