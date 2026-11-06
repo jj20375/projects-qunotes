@@ -329,7 +329,7 @@ public static class ProjectStatuses
     public static readonly string[] All = [Draft, Quoting, Won, Lost, InProgress, Completed, Closed, Cancelled];
 
     /// <summary>
-    /// 狀態流程：草稿 → 報價中 → 得標／未得標 → 執行中 → 已完工 → 已結案；未得標可重新報價，已取消可回到草稿。
+    /// 狀態流程：草稿 → 報價中 → 得標／未得標 → 執行中 → 已完工 → 已結案；未得標可重新報價（回到報價中），客戶回頭接受時也可直接改為得標；已取消可回到草稿。
     /// 進入 closed 另需 <c>projects:close</c> 子功能。
     /// </summary>
     public static readonly IReadOnlyDictionary<string, string[]> Transitions = new Dictionary<string, string[]>
@@ -337,7 +337,7 @@ public static class ProjectStatuses
         [Draft] = [Quoting, Cancelled],
         [Quoting] = [Won, Lost, Draft, Cancelled],
         [Won] = [InProgress, Cancelled],
-        [Lost] = [Quoting, Closed],
+        [Lost] = [Quoting, Won, Closed],
         [InProgress] = [Completed, Cancelled],
         [Completed] = [Closed, InProgress],
         [Closed] = [],

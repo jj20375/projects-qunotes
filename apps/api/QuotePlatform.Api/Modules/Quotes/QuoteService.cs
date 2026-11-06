@@ -56,7 +56,9 @@ public sealed partial class QuoteService(QuoteDbContext db, ProjectAccessService
             }
             else
             {
-                quotes = quotes.Where(value => value.QuoteNo.Contains(keyword) || value.ClientName.Contains(keyword) || (value.Title != null && value.Title.Contains(keyword)));
+                // 客戶名稱以報價快照比對（客戶改名後仍找得到舊報價），簡稱則看目前的客戶資料。
+                quotes = quotes.Where(value => value.QuoteNo.Contains(keyword) || value.ClientName.Contains(keyword) || (value.Title != null && value.Title.Contains(keyword))
+                    || db.Clients.Any(client => client.Id == value.ClientId && client.ShortName != null && client.ShortName.Contains(keyword)));
             }
         }
 
@@ -154,8 +156,9 @@ public sealed partial class QuoteService(QuoteDbContext db, ProjectAccessService
             cancellationToken);
         db.Quotes.Add(quote);
 
-        // 專案開始報價：草稿自動進入「報價中」。
+        // 專案開始報價：草稿自動進入「報價中」；未得標的專案重新報價也回到「報價中」。
         if (project.Status == ProjectStatuses.Draft) ChangeProjectStatus(project, ProjectStatuses.Quoting, $"建立報價單 {quote.QuoteNo}", scope.UserId);
+        else if (project.Status == ProjectStatuses.Lost) ChangeProjectStatus(project, ProjectStatuses.Quoting, $"重新報價：建立報價單 {quote.QuoteNo}", scope.UserId);
         audit.Add(scope.CompanyId, scope.UserId, "quote", quote.Id, "create", after: new { quote.QuoteNo, quote.ProjectId, quote.Total, source });
         await db.SaveChangesAsync(cancellationToken);
         return ServiceResult<QuoteCreated>.Created(new QuoteCreated(quote.Id, quote.QuoteNo));
@@ -230,7 +233,9 @@ public sealed partial class QuoteService(QuoteDbContext db, ProjectAccessService
             case "submit":
                 quote.SubmittedBy = scope.UserId;
                 quote.SubmittedAt = now;
-                // 新版正式送出後，被改版的舊版才作廢。
+                // 專案未得標前就建好的草稿，之後送審代表重新報價。
+                if (context.Project.Status == ProjectStatuses.Lost) ChangeProjectStatus(context.Project, ProjectStatuses.Quoting, $"重新報價：送審 {quote.QuoteNo}-R{quote.RevisionNo}", scope.UserId);
+                // 新版正式送出後，被改版的舊版才標示為已被取代。
                 if (quote.RevisionOfId is Guid previousId)
                 {
                     var previous = await db.Quotes.SingleAsync(value => value.Id == previousId, cancellationToken);

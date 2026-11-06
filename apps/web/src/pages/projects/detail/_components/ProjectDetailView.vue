@@ -22,11 +22,12 @@ import ProjectFollowUpsTab from './ProjectFollowUpsTab.vue';
 import { followUpDue } from '@/shared/services/followup-service';
 import AttachmentList from '@/app/components/AttachmentList.vue';
 import { useMe } from '@/app/composables/use-me';
+import { DATA_SCOPE_LABELS } from '@/shared/types/permissions';
 
 const projectId = new URLSearchParams(window.location.search).get('id') ?? '';
 // 總表的連結會帶 tab=followups，直接開到跟進紀錄頁籤。
 const requestedTab = ref(new URLSearchParams(window.location.search).get('tab') ?? 'members');
-const { can } = useMe();
+const { can, me } = useMe();
 // 網址的 tab 可能指向沒權限或不存在的頁籤；權限資料載入後會重新計算，所以用 computed 而不是在初始化時判斷一次。
 const tabVisible: Record<string, () => boolean> = {
   members: () => true,
@@ -93,7 +94,12 @@ function confirmDelete() {
   });
 }
 
-const roleLabel = computed(() => (p.value?.myRole ? PROJECT_ROLES[p.value.myRole] : p.value?.canWrite ? '部門範圍' : '檢視'));
+// 不是負責人或成員時，是因為資料範圍才看得到；顯示實際的範圍，而不是一律寫部門範圍。
+const roleLabel = computed(() => {
+  if (p.value?.myRole) return PROJECT_ROLES[p.value.myRole];
+  if (!p.value?.canWrite) return '檢視';
+  return `${DATA_SCOPE_LABELS[me.value?.scope.dataScope ?? 'department']}範圍`;
+});
 </script>
 
 <template>

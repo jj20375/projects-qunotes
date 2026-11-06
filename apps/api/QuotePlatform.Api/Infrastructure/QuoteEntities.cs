@@ -377,7 +377,7 @@ public static class QuoteStatuses
     /// <summary>客戶拒絕：客戶未採納此報價單。</summary>
     public const string Rejected = "rejected";
 
-    /// <summary>已作廢：產生新修訂版次後，歷史舊版本標記為已作廢。</summary>
+    /// <summary>已被取代：新版次送審後，舊版本標記為已被取代，不能再被接受。</summary>
     public const string Superseded = "superseded";
 
     /// <summary>所有合法狀態清單。</summary>

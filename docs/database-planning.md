@@ -18,7 +18,7 @@ DDL 草稿見 [database-schema.sql](./database-schema.sql)；實作時以 EF Cor
 - `clients`、`projects` 實作 `ISoftDelete`；EF Core 每個 entity 只能有一個 query filter，因此軟刪除條件與公司條件合併為 `CompanyId == 目前公司 && !IsDeleted`。
 - 單號由 `NumberSequenceService` 以 `INSERT … ON DUPLICATE KEY UPDATE CurrentValue = LAST_INSERT_ID(CurrentValue + 1)` 原子遞增（同一連線再 `SELECT LAST_INSERT_ID()`）；專案 `P{年}-{4 碼}` 每年重算，客戶 `C{4 碼}`。取號後寫入失敗會留下跳號，刻意接受。已驗證 8 筆併發建立不重號。
 - 搜尋「建立日」以台灣時間（UTC+8，`BusinessTime`）切日換算成 UTC 區間；開工／完工日是 `DATE` 欄位直接比較。
-- 專案狀態流程定義在 `ProjectStatuses.Transitions`：草稿→報價中→得標／未得標→執行中→已完工→已結案；未得標可重新報價、已取消可回到草稿；每次異動寫 `project_status_histories`。
+- 專案狀態流程定義在 `ProjectStatuses.Transitions`：草稿→報價中→得標／未得標→執行中→已完工→已結案；未得標可重新報價（建立或送審報價時自動回到報價中）或直接改為得標、已取消可回到草稿；每次異動寫 `project_status_histories`。
 
 ## 1. 部署與隔離
 

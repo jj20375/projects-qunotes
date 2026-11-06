@@ -272,6 +272,7 @@ const primaryActions = computed(() => (quote.value?.actions ?? []).filter((actio
         <a-button v-if="editable && !isNew" size="small" @click="refreshClientSnapshot">重新帶入客戶資料</a-button>
       </template>
       <a-alert v-if="isNew" type="info" show-icon message="客戶名稱、統編、聯絡人會在建立時依專案客戶自動帶入，之後可再修改。" class="gap-bottom" />
+      <!-- 有自己 disabled 條件的欄位要再併入 !editable：元件的 disabled 屬性會蓋過表單層級的設定。 -->
       <a-form layout="vertical" :disabled="!editable">
         <a-row :gutter="16">
           <a-col :xs="24" :md="12"><a-form-item label="案名"><a-input v-model:value="header.title" /></a-form-item></a-col>
@@ -290,11 +291,11 @@ const primaryActions = computed(() => (quote.value?.actions ?? []).filter((actio
             </a-form-item>
           </a-col>
           <a-col :xs="12" :md="6">
-            <a-form-item label="稅率 %"><a-input-number v-model:value="header.taxRate" :min="0" :max="100" :disabled="header.taxType !== 'taxable'" style="width: 100%" /></a-form-item>
+            <a-form-item label="稅率 %"><a-input-number v-model:value="header.taxRate" :min="0" :max="100" :disabled="!editable || header.taxType !== 'taxable'" style="width: 100%" /></a-form-item>
           </a-col>
           <a-col :xs="12" :md="6">
             <a-form-item label="單價">
-              <a-radio-group v-model:value="header.taxIncluded" :disabled="header.taxType !== 'taxable'">
+              <a-radio-group v-model:value="header.taxIncluded" :disabled="!editable || header.taxType !== 'taxable'">
                 <a-radio-button :value="false">未稅（外加）</a-radio-button>
                 <a-radio-button :value="true">含稅</a-radio-button>
               </a-radio-group>
@@ -304,7 +305,7 @@ const primaryActions = computed(() => (quote.value?.actions ?? []).filter((actio
             <a-form-item label="整單折扣">
               <a-input-group compact style="display: flex">
                 <a-select v-model:value="header.discountType" style="width: 96px" :options="[{ value: 'none', label: '無' }, { value: 'percent', label: '%' }, { value: 'amount', label: '金額' }]" />
-                <a-input-number v-model:value="header.discountValue" :min="0" :disabled="header.discountType === 'none'" style="flex: 1" />
+                <a-input-number v-model:value="header.discountValue" :min="0" :disabled="!editable || header.discountType === 'none'" style="flex: 1" />
               </a-input-group>
             </a-form-item>
           </a-col>

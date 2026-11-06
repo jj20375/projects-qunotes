@@ -151,16 +151,16 @@ function remove(row: Invoice) {
 
 const col = dataColumns<Invoice>();
 const columns = [
-  col.accessor('invoiceNo', { header: '發票號碼', meta: { width: 130 } }),
+  col.accessor('invoiceNo', { header: '發票號碼', meta: { width: 120 } }),
   col.accessor('invoiceDate', { header: '日期', meta: { width: 105 } }),
-  col.accessor('invoiceType', { header: '類型', meta: { width: 90 } }),
+  col.accessor('invoiceType', { header: '類型', meta: { width: 64 } }),
   col.accessor('orderNo', { header: '對應訂單', meta: { width: 130 } }),
-  col.accessor('buyerName', { header: '買受人' }),
+  col.accessor('buyerName', { header: '買受人', meta: { width: 160 } }),
   col.accessor('totalAmount', { header: '總額', meta: { width: 110, align: 'right' } }),
-  col.accessor('paymentStatus', { header: '收款', meta: { width: 150 } }),
+  col.accessor('paymentStatus', { header: '收款', meta: { width: 120 } }),
   col.accessor('dueDate', { header: '到期日', meta: { width: 105 } }),
-  col.accessor('attachmentCount', { header: '附件', meta: { width: 60 } }),
-  col.display({ id: 'ops', header: '', meta: { width: 210 } }),
+  col.accessor('attachmentCount', { header: '附件', meta: { width: 50 } }),
+  col.display({ id: 'ops', header: '', meta: { width: 120 } }),
 ];
 </script>
 
@@ -176,7 +176,7 @@ const columns = [
     size="small"
     :loading="invoices.isFetching.value"
     :pagination="{ page: paging.page, pageSize: paging.pageSize, total: invoices.data.value?.total ?? 0, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 筆` }"
-    :scroll-x="1170"
+    :scroll-x="1120"
     @change="onTableChange"
   >
     <template #cell="{ columnId, record }">

@@ -89,7 +89,7 @@ const columns = [
   col.accessor('clientName', { header: '客戶', meta: { width: 160 } }),
   col.accessor('contactName', { header: '對象', meta: { width: 100 } }),
   col.accessor('summary', { header: '主旨' }),
-  col.accessor('nextFollowUpOn', { header: '下次聯絡', meta: { width: 110 } }),
+  col.accessor('nextFollowUpOn', { header: '下次聯絡', meta: { width: 120 } }),
   col.accessor((row) => row.createdBy.displayName ?? '', { id: 'createdBy', header: '撰寫人', meta: { width: 100 } }),
   col.accessor('createdAt', { header: '建立時間', enableSorting: true, meta: { width: 140 } }),
 ];

@@ -268,6 +268,32 @@ await step('客戶 Excel：匯出、dryRun 預覽、正式匯入；業務沒有�
   assert.equal((await call('POST', '/api/clients/import?dryRun=true', { token: sales, form: xlsxForm(exported.bytes) })).status, 403);
 });
 
+await step('未得標專案重新報價：送審舊草稿或新增報價都回到報價中；報價列表可用客戶簡稱搜尋', async () => {
+  const shortName = `簡${suffix}`;
+  const client = await call('POST', '/api/clients', { token: sales, body: { name: `${suffix} 重報客戶`, shortName } });
+  assert.equal(client.status, 201, JSON.stringify(client.data));
+  const project = (await call('POST', '/api/projects', { token: sales, body: { name: `${suffix} 重新報價`, clientId: client.data.id } })).data.id;
+  const status = async () => (await call('GET', `/api/projects/${project}`, { token: sales })).data;
+  const markLost = async () => assert.equal((await call('POST', `/api/projects/${project}/status`, { token: sales, body: { status: 'lost', reason: '價格' } })).status, 200);
+
+  const draft = (await call('POST', `/api/projects/${project}/quotes`, { token: sales, body: { items } })).data.id;
+  assert.equal((await status()).status, 'quoting');
+  await markLost();
+  assert.equal((await call('POST', `/api/quotes/${draft}/submit`, { token: sales })).status, 200);
+  let detail = await status();
+  assert.equal(detail.status, 'quoting', '送審未得標前建立的草稿要回到報價中');
+  assert.match(detail.history[0].reason, /重新報價/);
+
+  await markLost();
+  assert.equal((await call('POST', `/api/projects/${project}/quotes`, { token: sales, body: { items } })).status, 201);
+  detail = await status();
+  assert.equal(detail.status, 'quoting', '未得標的專案新增報價要回到報價中');
+  assert.match(detail.history[0].reason, /重新報價：建立報價單/);
+
+  const found = (await call('GET', `/api/quotes?keyword=${encodeURIComponent(shortName)}`, { token: sales })).data;
+  assert.equal(found.total, 2, '以客戶簡稱找到這個客戶的兩份報價');
+});
+
 await step('清理：停用這次建立的測試帳號（不讓公司通訊錄與成員下拉堆滿測試帳號）', async () => {
   for (const account of [`qs-${suffix}`]) {
     const found = (await call('GET', `/api/admin/users?keyword=${account}`, { token: admin })).data.items.find((user) => user.account === account);

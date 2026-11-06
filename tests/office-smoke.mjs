@@ -11,6 +11,12 @@ import { readFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import { setTimeout as sleep } from 'node:timers/promises';
 
+// Node 20 沒有內建 WebSocket，不先擋下會在第二步才以 ReferenceError 崩潰，看不出原因。
+if (typeof WebSocket === 'undefined') {
+  console.error(`office-smoke 需要 Node 24（內建 WebSocket），目前是 ${process.version}；請先執行 nvm use 24。`);
+  process.exit(1);
+}
+
 const baseUrl = process.argv[2] ?? 'http://127.0.0.1:5280';
 const wsBase = baseUrl.replace(/^http/, 'ws');
 const RS = '\u001e';

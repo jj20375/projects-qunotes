@@ -37,8 +37,8 @@ const columns = [
   col.accessor('projectName', { header: '專案' }),
   col.accessor('clientName', { header: '客戶', meta: { width: 200 } }),
   col.accessor('status', { header: '狀態', meta: { width: 120 } }),
-  col.accessor('quoteDate', { header: '報價日期', meta: { width: 110 } }),
-  col.accessor('validUntil', { header: '有效期限', meta: { width: 110 } }),
+  col.accessor('quoteDate', { header: '報價日期', meta: { width: 120 } }),
+  col.accessor('validUntil', { header: '有效期限', meta: { width: 120 } }),
   col.accessor('total', { header: '總計', meta: { width: 130, align: 'right' } }),
 ];
 
@@ -78,7 +78,7 @@ function onTableChange(change: TableChange) {
       row-key="id"
       :loading="quotes.isFetching.value"
       :pagination="{ page: paging.page, pageSize: paging.pageSize, total: quotes.data.value?.total ?? 0, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 筆` }"
-      :scroll-x="1000"
+      :scroll-x="1060"
       @change="onTableChange"
     >
       <template #cell="{ columnId, record }">

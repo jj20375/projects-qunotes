@@ -82,7 +82,7 @@ const itemNumber = (index: number) => props.modelValue.slice(0, index + 1).filte
 
 <template>
   <div class="wrap">
-    <table class="items">
+    <table class="items" :class="{ locked: readonly }">
       <thead>
         <tr>
           <th class="no">#</th>
@@ -161,6 +161,16 @@ const itemNumber = (index: number) => props.modelValue.slice(0, index + 1).filte
 </template>
 
 <style scoped>
+/* 鎖定時欄位仍用 readonly（可選取複製），去掉框線與底色，看起來像純文字而不是可輸入。 */
+.locked :deep(.ant-input),
+.locked :deep(.ant-input-number),
+.locked :deep(.ant-select-selector) {
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: inherit !important;
+  cursor: default;
+}
 .wrap {
   overflow-x: auto;
 }

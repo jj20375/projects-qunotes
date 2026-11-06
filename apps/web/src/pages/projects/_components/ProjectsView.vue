@@ -99,11 +99,12 @@ const columns = [
   col.accessor((row) => row.client.name, { id: 'client', header: '客戶', meta: { width: 180 } }),
   col.accessor('status', { header: '狀態', meta: { width: 90 } }),
   ...(canFollowUps ? [col.accessor('nextFollowUpOn', { header: '下次聯絡', enableSorting: true, meta: { width: 120 } })] : []),
+  // 金額排在負責人前：1440px 寬的畫面不必水平捲動就看得到。
+  col.accessor('expectedAmount', { header: '預估金額', enableSorting: true, meta: { width: 120, align: 'right' } }),
+  col.accessor('contractAmount', { header: '成交金額', enableSorting: true, meta: { width: 120, align: 'right' } }),
   col.accessor((row) => row.owner.displayName, { id: 'owner', header: '負責人', meta: { width: 100 } }),
   col.accessor('departmentName', { header: '部門', meta: { width: 100 } }),
   col.accessor('startDate', { header: '工期', enableSorting: true, meta: { width: 190 } }),
-  col.accessor('expectedAmount', { header: '預估金額', enableSorting: true, meta: { width: 120, align: 'right' } }),
-  col.accessor('contractAmount', { header: '成交金額', enableSorting: true, meta: { width: 120, align: 'right' } }),
   col.accessor('createdAt', { header: '建立日', enableSorting: true, meta: { width: 110 } }),
 ];
 

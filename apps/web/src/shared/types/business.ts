@@ -46,7 +46,7 @@ export const QUOTE_STATUSES = [
   { value: 'sent', label: '已送出', color: 'processing' },
   { value: 'accepted', label: '客戶接受', color: 'success' },
   { value: 'rejected', label: '客戶拒絕', color: 'error' },
-  { value: 'superseded', label: '已作廢', color: 'default' },
+  { value: 'superseded', label: '已被取代', color: 'default' },
 ] as const;
 
 /**
