@@ -264,7 +264,8 @@ public sealed class ProjectService(QuoteDbContext db, ProjectAccessService acces
         if (!string.IsNullOrWhiteSpace(query.Keyword))
         {
             var keyword = query.Keyword.Trim();
-            projects = projects.Where(value => value.Name.Contains(keyword) || value.ProjectNo.Contains(keyword) || value.Client.Name.Contains(keyword));
+            projects = projects.Where(value => value.Name.Contains(keyword) || value.ProjectNo.Contains(keyword) || value.Client.Name.Contains(keyword)
+                || (value.Client.ShortName != null && value.Client.ShortName.Contains(keyword)));
         }
         if (query.ClientId is Guid clientId) projects = projects.Where(value => value.ClientId == clientId);
         if (query.OwnerUserId is Guid ownerUserId) projects = projects.Where(value => value.OwnerUserId == ownerUserId);

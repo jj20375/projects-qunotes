@@ -120,7 +120,7 @@ function onCreated(id: string) {
         <a-col :xs="24" :md="8">
           <a-input-search
             v-model:value="keywordInput"
-            placeholder="專案名稱、編號、客戶名稱"
+            placeholder="專案名稱、編號、客戶名稱或簡稱"
             allow-clear
             @search="() => ((filters.keyword = keywordInput), onFilterChange())"
           />

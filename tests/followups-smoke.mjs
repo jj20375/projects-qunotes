@@ -97,7 +97,7 @@ await step('準備：新公司、業務部與下層一課、財務部、主管�
 
 await step('準備：客戶（兩位聯絡人）、另一個客戶、三個專案（業務 A、業務 B、財務部）', async () => {
   // 客戶歸在業務一課：本人範圍的業務才選得到（客戶依所屬部門隔離）。
-  const client = (await ok(call('POST', '/api/clients', { token: admin, body: { name: '跟進客戶', departmentId: teamDept, contacts: [{ name: '陳經理', title: '採購', isPrimary: true }, { name: '李工程師', isPrimary: false }] } }))).id;
+  const client = (await ok(call('POST', '/api/clients', { token: admin, body: { name: '跟進客戶', shortName: `簡稱${suffix}`, departmentId: teamDept, contacts: [{ name: '陳經理', title: '採購', isPrimary: true }, { name: '李工程師', isPrimary: false }] } }))).id;
   const other = (await ok(call('POST', '/api/clients', { token: admin, body: { name: '其他客戶', departmentId: teamDept, contacts: [{ name: '王小姐', isPrimary: true }] } }))).id;
   otherClientContact = (await ok(call('GET', `/api/clients/${other}`, { token: admin }))).contacts[0].id;
   pA = (await ok(call('POST', '/api/projects', { token: salesA, body: { name: `FU-A ${suffix}`, clientId: client } }))).id;
@@ -268,6 +268,12 @@ await step('提醒範圍：未得標後不算待跟進但日期保留；已結�
   assert.equal(list.canCreate, false);
   assert.equal(list.canUpdate, false);
   assert.equal(list.total, 1);
+});
+
+await step('關鍵字可比對客戶簡稱：專案列表與跟進總表', async () => {
+  const shortName = encodeURIComponent(`簡稱${suffix}`);
+  assert.equal((await ok(call('GET', `/api/projects?keyword=${shortName}`, { token: admin }))).total, 3);
+  assert.equal((await ok(call('GET', `/api/followups?keyword=${shortName}`, { token: admin }))).total, 4);
 });
 
 console.log(`\n${passed} 項跟進紀錄驗證通過`);

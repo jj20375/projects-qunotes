@@ -100,7 +100,7 @@ const columns = [
     <a-card :bordered="false" :body-style="{ paddingBottom: '8px' }">
       <a-row :gutter="[12, 12]">
         <a-col :xs="24" :md="8">
-          <a-input-search v-model:value="keywordInput" placeholder="主旨、內容、對象、專案、客戶" allow-clear @search="search" />
+          <a-input-search v-model:value="keywordInput" placeholder="主旨、內容、對象、專案、客戶名稱或簡稱" allow-clear @search="search" />
         </a-col>
         <a-col :xs="24" :md="4">
           <a-select v-model:value="filters.type" :options="FOLLOW_UP_TYPES" allow-clear placeholder="全部類型" style="width: 100%" @change="onFilterChange" />

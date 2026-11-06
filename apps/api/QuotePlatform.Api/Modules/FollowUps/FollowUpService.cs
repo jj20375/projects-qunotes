@@ -91,7 +91,8 @@ public sealed class FollowUpService(QuoteDbContext db, ProjectAccessService acce
                 || (value.Content != null && value.Content.Contains(keyword))
                 || (value.ContactName != null && value.ContactName.Contains(keyword))
                 || db.Projects.Any(project => project.Id == value.ProjectId
-                    && (project.ProjectNo.Contains(keyword) || project.Name.Contains(keyword) || project.Client.Name.Contains(keyword))));
+                    && (project.ProjectNo.Contains(keyword) || project.Name.Contains(keyword) || project.Client.Name.Contains(keyword)
+                        || (project.Client.ShortName != null && project.Client.ShortName.Contains(keyword)))));
         }
 
         var pageSize = Math.Clamp(query.PageSize ?? 20, 1, 200);
