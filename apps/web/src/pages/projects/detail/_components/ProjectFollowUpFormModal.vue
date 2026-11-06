@@ -32,7 +32,9 @@ const form = reactive({
   nextAction: '',
 });
 const saving = ref(false);
-const contactOptions = ref<{ key: string; value: string; label: string; contactId: string }[]>([]);
+const contactOptions = ref<{ value: string; label: string; contactId: string; name: string }[]>([]);
+// 只看不帶關鍵字的那次查詢：打字查不到不代表客戶沒有聯絡人。
+const noContacts = ref(false);
 const quickNext = [
   { label: '明天', days: 1 },
   { label: '3 天後', days: 3 },
@@ -56,6 +58,7 @@ watch(
       nextFollowUpOn: row?.nextFollowUpOn ? dayjs(row.nextFollowUpOn) : null,
       nextAction: row?.nextAction ?? '',
     });
+    noContacts.value = false;
     searchContacts('');
   }
 );
@@ -66,13 +69,14 @@ function searchContacts(keyword: string) {
   contactTimer = setTimeout(async () => {
     try {
       const contacts = await listFollowUpContactsApi(props.projectId, keyword);
-      // 同名聯絡人的 value 相同，選項靠 key 區分；value 維持姓名，選取後才會寫進輸入框。
+      // 選單以 value 對應選項，同名聯絡人若用姓名當 value 會選到另一位，所以 value 用 ID，選取後再把姓名寫回輸入框。
       contactOptions.value = contacts.map((contact) => ({
-        key: contact.id,
-        value: contact.name,
+        value: contact.id,
         label: contact.title ? `${contact.name}（${contact.title}）` : contact.name,
         contactId: contact.id,
+        name: contact.name,
       }));
+      if (!keyword) noContacts.value = contacts.length === 0;
     } catch {
       contactOptions.value = [];
     }
@@ -85,8 +89,11 @@ function onContactSearch(keyword: string) {
   searchContacts(keyword);
 }
 
+// 選取時 v-model 會先收到 value（聯絡人 ID），這裡接著改成姓名。
 function onContactSelect(_value: unknown, option: unknown) {
-  form.contactId = (option as { contactId: string }).contactId;
+  const selected = option as { contactId: string; name: string };
+  form.contactId = selected.contactId;
+  form.contactName = selected.name;
 }
 
 function onContactChange(value: unknown) {
@@ -148,7 +155,7 @@ async function save() {
           </a-form-item>
         </a-col>
         <a-col :xs="24" :sm="12">
-          <a-form-item label="對象">
+          <a-form-item label="對象" :extra="noContacts ? '此客戶尚未建立聯絡人，可直接輸入姓名' : undefined">
             <a-auto-complete
               v-model:value="form.contactName"
               :options="contactOptions"
