@@ -42,6 +42,7 @@ if (args.SequenceEqual(["--self-test"]))
     PermissionCatalog.AssertCatalog();
     PermissionGrantRules.AssertExamples();
     QuoteCalculator.AssertExamples();
+    QuoteTargetFitter.AssertExamples();
     QuoteExcel.AssertRoundTrip();
     QuoteExcel.AssertLegacyLayout();
     QuoteDocumentService.AssertPdfRenders();

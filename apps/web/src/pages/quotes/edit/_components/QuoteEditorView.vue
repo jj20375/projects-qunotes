@@ -27,6 +27,7 @@ import { formatDateTime, formatMoney, quoteNumber, quoteStatusColor, quoteStatus
 import { downloadFile } from '@/shared/utils/download';
 import { calculate } from '@/shared/utils/quote-calc';
 import QuoteItemsTable from './QuoteItemsTable.vue';
+import QuoteFitTotalModal from './QuoteFitTotalModal.vue';
 import AttachmentList from '@/app/components/AttachmentList.vue';
 import TermsEditor from '@/app/components/TermsEditor.vue';
 
@@ -55,6 +56,23 @@ const totals = computed(() =>
     taxRate: header.taxRate,
   }),
 );
+
+const fitOpen = ref(false);
+const fitHeader = computed<QuoteHeader>(() => ({
+  currency: header.currency,
+  discountType: header.discountType,
+  discountValue: header.discountValue,
+  taxType: header.taxType,
+  taxIncluded: header.taxIncluded,
+  taxRate: header.taxRate,
+}));
+
+function applyFit(value: { items: QuoteItem[]; discountType: QuoteHeader['discountType']; discountValue: number }) {
+  items.value = value.items;
+  header.discountType = value.discountType;
+  header.discountValue = value.discountValue;
+  fitOpen.value = false;
+}
 
 const headerFields = ['title', 'clientName', 'clientTaxId', 'clientAddress', 'contactName', 'contactPhone', 'contactEmail', 'currency', 'discountType', 'discountValue', 'taxType', 'taxIncluded', 'taxRate', 'paymentTerms', 'deliveryTerms', 'terms', 'note'] as const;
 
@@ -322,6 +340,9 @@ const primaryActions = computed(() => (quote.value?.actions ?? []).filter((actio
     </a-card>
 
     <a-card title="報價明細" :bordered="false">
+      <template #extra>
+        <a-button v-if="editable" size="small" @click="fitOpen = true">調整至目標總價</a-button>
+      </template>
       <QuoteItemsTable v-model="items" :readonly="!editable" :show-cost="showCost" :can-search-products="can('products', 'read')" :currency="header.currency ?? 'TWD'" />
       <div class="totals">
         <dl>
@@ -363,6 +384,8 @@ const primaryActions = computed(() => (quote.value?.actions ?? []).filter((actio
       </a-descriptions>
     </a-card>
   </a-space>
+
+  <QuoteFitTotalModal :open="fitOpen" :items="items" :header="fitHeader" :show-cost="showCost" @close="fitOpen = false" @apply="applyFit" />
 
   <a-modal :open="!!reasonAction" :title="reasonAction === 'return' ? '退回報價' : '客戶拒絕'" ok-text="確認" @ok="submitReason" @cancel="reasonAction = null">
     <a-textarea v-model:value="reason" :rows="3" placeholder="請填寫原因（必填）" />

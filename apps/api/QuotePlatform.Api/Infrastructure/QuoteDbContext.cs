@@ -498,6 +498,7 @@ public sealed class QuoteDbContext(DbContextOptions<QuoteDbContext> options, Com
             entity.Property(value => value.Amount).HasPrecision(18, 2);
             entity.Property(value => value.UnitCost).HasPrecision(18, 4);
             entity.Property(value => value.Remark).HasMaxLength(500);
+            entity.Property(value => value.PriceLocked).HasDefaultValue(false).HasComment("議價調整總價時鎖定此列單價，不參與分攤");
             entity.HasIndex(value => new { value.CompanyId, value.QuoteId, value.SortOrder });
             entity.HasOne<Quote>().WithMany(value => value.Items).HasForeignKey(value => value.QuoteId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne<Product>().WithMany().HasForeignKey(value => value.ProductId).OnDelete(DeleteBehavior.SetNull);

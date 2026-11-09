@@ -61,6 +61,7 @@ public sealed record QuoteInput(
 /// <param name="DiscountRate">單列折扣率（百分比，如 5 代表 5%）。</param>
 /// <param name="UnitCost">單位成本（僅具檢視成本權限者可見與設定）。</param>
 /// <param name="Remark">單列備註說明。</param>
+/// <param name="PriceLocked">議價調整總價時是否鎖定此列單價。</param>
 public sealed record QuoteItemInput(
     string? LineType,
     Guid? ProductId,
@@ -72,7 +73,8 @@ public sealed record QuoteItemInput(
     decimal? UnitPrice,
     decimal? DiscountRate,
     decimal? UnitCost,
-    string? Remark);
+    string? Remark,
+    bool? PriceLocked = null);
 
 /// <summary>
 /// 報價單退回或拒絕原因請求。

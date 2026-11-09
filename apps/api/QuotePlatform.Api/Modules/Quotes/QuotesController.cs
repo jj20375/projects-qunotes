@@ -33,6 +33,19 @@ public sealed class QuotesController(QuoteService service, QuoteDocumentService 
         RequestScope.TryRead(User, out var scope) && scope.IsCompany ? Ok(new { items = QuoteTerms.Split(request.Text) }) : Forbidden();
 
     /// <summary>
+    /// 試算「調整至目標總價」：以整單折讓或分攤到未鎖定品項，讓含稅總計或未稅金額剛好等於目標；只試算不寫入。
+    /// </summary>
+    /// <param name="request">編輯中的報價內容、目標金額、口徑與調整方式。</param>
+    /// <returns>傳回調整後的折扣、各品項單價與合計；湊不到時傳回最接近的可達金額。</returns>
+    [HttpPost("quotes/fit-total")]
+    public ActionResult FitTotal(QuoteFitRequest request)
+    {
+        // 試算不讀寫資料，但只開放給能建立或修改報價的人，與編輯器的可編輯條件一致。
+        if (!RequestScope.TryRead(User, out var scope) || !scope.IsCompany || !(scope.Has("quotes", "create") || scope.Has("quotes", "update"))) return Forbidden();
+        return ToResult(QuoteTargetFitter.Fit(request, scope.HasOption("quotes", "view_cost")));
+    }
+
+    /// <summary>
     /// 條件搜尋跨專案之報價單清單。
     /// </summary>
     /// <param name="query">報價單複合查詢條件。</param>

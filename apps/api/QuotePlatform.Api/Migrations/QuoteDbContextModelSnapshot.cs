@@ -1849,6 +1849,12 @@ namespace QuotePlatform.Api.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("varchar(500)");
 
+                    b.Property<bool>("PriceLocked")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("tinyint(1)")
+                        .HasDefaultValue(false)
+                        .HasComment("議價調整總價時鎖定此列單價，不參與分攤");
+
                     b.Property<Guid?>("ProductId")
                         .HasColumnType("char(36)");
 

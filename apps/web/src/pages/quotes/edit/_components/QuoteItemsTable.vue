@@ -3,8 +3,10 @@
  * @component QuoteItemsTable
  * 報價明細編輯：品項／分段標題／備註列、品名自動完成（品項價目）、即時金額、上下移動。
  * 金額只是即時試算，存檔後以後端重算結果為準。
+ * 品項列可「鎖定單價」：議價用「調整至目標總價」分攤時，鎖定的列不會變動。
  */
 import { ref } from 'vue';
+import { LockOutlined, UnlockOutlined } from '@ant-design/icons-vue';
 import type { ProductRow, QuoteItem } from '@/shared/services/quote-service';
 import { searchProductsApi } from '@/shared/services/quote-service';
 import { digitsOf, lineAmount } from '@/shared/utils/quote-calc';
@@ -102,7 +104,10 @@ const itemNumber = (index: number) => props.modelValue.slice(0, index + 1).filte
       </thead>
       <tbody>
         <tr v-for="(item, index) in modelValue" :key="item.id ?? index" :class="item.lineType">
-          <td class="no">{{ item.lineType === 'item' ? itemNumber(index) : '' }}</td>
+          <td class="no">
+            {{ item.lineType === 'item' ? itemNumber(index) : '' }}
+            <LockOutlined v-if="readonly && item.lineType === 'item' && item.priceLocked" class="locked-icon" title="單價已鎖定" />
+          </td>
           <td v-if="!readonly" class="type">
             <a-select :value="item.lineType" :options="lineTypes" size="small" @change="(value: unknown) => update(index, { lineType: value as QuoteItem['lineType'] })" />
           </td>
@@ -142,6 +147,18 @@ const itemNumber = (index: number) => props.modelValue.slice(0, index + 1).filte
             </td>
           </template>
           <td v-if="!readonly" class="ops">
+            <a-button
+              v-if="item.lineType === 'item'"
+              size="small"
+              type="text"
+              :class="{ 'lock-on': item.priceLocked }"
+              :title="item.priceLocked ? '單價已鎖定，調整至目標總價時不會變動；點一下解除' : '鎖定單價：調整至目標總價時不變動'"
+              :aria-label="item.priceLocked ? '解除鎖定單價' : '鎖定單價'"
+              @click="update(index, { priceLocked: !item.priceLocked })"
+            >
+              <LockOutlined v-if="item.priceLocked" />
+              <UnlockOutlined v-else />
+            </a-button>
             <a-button size="small" type="text" :disabled="index === 0" aria-label="上移" @click="move(index, -1)">↑</a-button>
             <a-button size="small" type="text" :disabled="index === modelValue.length - 1" aria-label="下移" @click="move(index, 1)">↓</a-button>
             <a-button size="small" type="text" danger aria-label="刪除" @click="remove(index)">✕</a-button>
@@ -199,7 +216,8 @@ const itemNumber = (index: number) => props.modelValue.slice(0, index + 1).filte
   background: #fffbe6;
 }
 .no {
-  width: 32px;
+  width: 40px;
+  white-space: nowrap;
   text-align: center !important;
   color: #888;
 }
@@ -237,8 +255,19 @@ const itemNumber = (index: number) => props.modelValue.slice(0, index + 1).filte
   width: 140px;
 }
 .ops {
-  width: 96px;
+  width: 128px;
   white-space: nowrap;
+}
+.locked-icon {
+  margin-left: 2px;
+  color: #1f4e79;
+  font-size: 11px;
+}
+.ops .lock-on {
+  color: #1f4e79;
+}
+.ops :deep(.ant-btn:not(.lock-on) .anticon-unlock) {
+  color: #bbb;
 }
 .empty {
   text-align: center !important;

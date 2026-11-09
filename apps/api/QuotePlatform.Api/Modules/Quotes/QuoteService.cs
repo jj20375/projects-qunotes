@@ -404,6 +404,7 @@ public sealed partial class QuoteService(QuoteDbContext db, ProjectAccessService
             DiscountRate = item.DiscountRate ?? 0,
             UnitCost = canSeeCost ? item.UnitCost : null,
             Remark = Clean(item.Remark),
+            PriceLocked = item.PriceLocked ?? false,
         }).ToList();
         QuoteCalculator.Apply(quote);
         return null;
@@ -452,6 +453,7 @@ public sealed partial class QuoteService(QuoteDbContext db, ProjectAccessService
             DiscountRate = item.DiscountRate,
             UnitCost = item.UnitCost,
             Remark = item.Remark,
+            PriceLocked = item.PriceLocked,
         }).ToList();
         QuoteCalculator.Apply(copy);
         return copy;
@@ -536,6 +538,7 @@ public sealed partial class QuoteService(QuoteDbContext db, ProjectAccessService
                 value.Amount,
                 unitCost = canSeeCost ? value.UnitCost : null,
                 value.Remark,
+                value.PriceLocked,
             }),
         };
     }

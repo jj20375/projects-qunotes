@@ -222,6 +222,9 @@ public sealed class QuoteItem : ICompanyOwned
 
     /// <summary>單列備註說明。</summary>
     public string? Remark { get; set; }
+
+    /// <summary>議價調整總價時鎖定此列單價，不參與分攤；改版時一併沿用。</summary>
+    public bool PriceLocked { get; set; }
 }
 
 /// <summary>

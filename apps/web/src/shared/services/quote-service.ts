@@ -36,6 +36,8 @@ export interface QuoteItem {
   unitCost?: number | null;
   /** 備註 */
   remark?: string | null;
+  /** 議價調整總價時鎖定此列單價，不參與分攤 */
+  priceLocked?: boolean;
 }
 
 /**
@@ -240,6 +242,51 @@ export function createQuoteApi(projectId: string, body: QuoteInput): Promise<{ i
  */
 export function updateQuoteApi(id: string, body: QuoteInput): Promise<void> {
   return apiRequest(`/api/quotes/${id}`, { method: 'PUT', body });
+}
+
+/** 「調整至目標總價」的目標口徑：total 含稅總計、net 未稅金額 */
+export type QuoteFitBasis = 'total' | 'net';
+
+/** 「調整至目標總價」的方式：discount 整單折讓（品項不動）、allocate 分攤到未鎖定品項 */
+export type QuoteFitMode = 'discount' | 'allocate';
+
+/** 調整至目標總價的試算結果 */
+export interface QuoteFitResult {
+  /** 是否剛好湊到目標；false 時只有最接近的可達金額 */
+  exact: boolean;
+  /** 湊不到時，低於目標且最接近的可達金額 */
+  nearestBelow: number | null;
+  /** 湊不到時，高於目標且最接近的可達金額 */
+  nearestAbove: number | null;
+  /** 調整後的整單折扣方式 */
+  discountType: 'none' | 'percent' | 'amount';
+  /** 調整後的折扣數值 */
+  discountValue: number;
+  /** 各品項列調整後的單價與金額；index 對應送出的明細陣列 */
+  items: { index: number; unitPrice: number; amount: number; changed: boolean; belowCost: boolean }[];
+  /** 調整後的合計；湊不到時為 null */
+  totals: {
+    subtotal: number;
+    discountAmount: number;
+    netAmount: number;
+    taxAmount: number;
+    total: number;
+    costTotal: number | null;
+    grossMargin: number | null;
+  } | null;
+}
+
+/**
+ * 試算「調整至目標總價」：只試算不寫入，套用後仍須存檔。
+ *
+ * @param quote 編輯中的報價（表頭與完整明細，回傳的 index 對應這份明細）
+ * @param target 目標金額
+ * @param basis 目標口徑
+ * @param mode 調整方式
+ * @returns 試算結果；條件不合理時拋出 ApiError（400）
+ */
+export function fitQuoteTotalApi(quote: QuoteInput, target: number, basis: QuoteFitBasis, mode: QuoteFitMode): Promise<QuoteFitResult> {
+  return apiRequest<QuoteFitResult>('/api/quotes/fit-total', { method: 'POST', body: { quote, target, basis, mode } });
 }
 
 /**

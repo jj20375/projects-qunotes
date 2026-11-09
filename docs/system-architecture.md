@@ -92,6 +92,17 @@ flowchart LR
 6. 已接受時回寫專案的成交金額，專案狀態改為 `won`，同專案其他進行中的報價改為 `superseded`。每個專案只能有一份定案（已接受）報價：已有定案時，接受第二份會被拒絕。
 7. 已送出的報價要修改時，只能「改版」：複製出 `RevisionNo + 1` 的新草稿，舊版標示 `superseded`。
 
+#### 6.1.1 調整至目標總價（議價）
+
+議價常以總價談，例如原本未稅 1,520,000，客戶要「含稅 1,520,000」。編輯器「報價明細」右上角的「調整至目標總價」輸入目標金額，由後端 `QuoteTargetFitter` 試算，預覽調整前後的合計與變動的品項，按「套用」才寫回編輯中的報價，仍要按「儲存」，金額照樣由 `QuoteCalculator` 重算。
+
+- **目標口徑**：含稅總計或未稅金額（非應稅時兩者相同）。
+- **整單折讓**：品項不動，原本的整單折扣改成剛好的折讓金額。上例：未稅 1,520,000 ÷ 1.05 = 1,447,619（四捨五入），稅 72,381，折讓 72,381。只能往下調。
+- **分攤到未鎖定品項**：每一列品項可按鎖頭「鎖定單價」（`quote_items.PriceLocked`，改版時沿用）。鎖定的列不動，其餘品項依目前金額等比例調整單價，單價取到幣別位數（台幣到元）。數量為 0、單價為 0 或折扣 100% 的列也不調整。尾差先找一列能剛好吸收的品項（通常是數量 1 的列）；都吸收不了時放進整單折讓（表頭是百分比折扣時不改折扣方式，改用到小數兩位的單價）。
+- **湊不到的目標**：外加稅的稅額要四捨五入，大約每 21 個總額會有 1 個怎麼調都湊不到（例如未稅 256,189 → 總計 268,998，未稅 256,190 → 269,000，所以 268,999 不可能）。這時回傳上下最接近的兩個可達金額，畫面讓使用者點選其一。
+- **提醒**：具 `view_cost` 時，調整後折後單價低於成本的品項標紅；預覽也顯示調整前後的毛利。
+- 試算端點不讀寫資料，但只開放給有 `quotes:create` 或 `quotes:update` 的人。
+
 ### 6.2 匯入（Excel 範本／舊報價 Excel／圖像識別）
 
 三種來源共用 `import_jobs` 兩階段流程，避免解析錯誤直接寫進正式資料：
@@ -337,6 +348,7 @@ company scope（公司一律取自 JWT，路由不帶 companyId）
 ✅ GET|PUT|DELETE /api/quotes/{id}                只有草稿可改、可刪
 ✅ POST /api/quotes/{id}/submit | approve | return | send | accept | reject   return、reject 需原因；approve、return 需 quotes:approve
 ✅ POST /api/quotes/{id}/revise                  改版為同單號的新草稿
+✅ POST /api/quotes/fit-total                    試算「調整至目標總價」（整單折讓或分攤到未鎖定品項），只試算不寫入
 ✅ GET  /api/quotes/{id}/pdf | excel             需 export_pdf／export_excel
 ✅ GET  /api/quotes/import-template              匯入範本（與匯出同版面）
 ✅ POST /api/quote-imports                       multipart：file、kind（excel_template｜legacy_excel）、mappingProfileId

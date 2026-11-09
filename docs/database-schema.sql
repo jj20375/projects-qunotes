@@ -601,6 +601,7 @@ CREATE TABLE quote_items (
   Amount        DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '項目未稅小計金額（後端重新計算）',
   UnitCost      DECIMAL(18,4) NULL COMMENT '預估單位進貨成本',
   Remark        VARCHAR(500)  NULL COMMENT '明細備註說明',
+  PriceLocked   TINYINT(1)    NOT NULL DEFAULT 0 COMMENT '議價調整總價時鎖定此列單價，不參與分攤',
   PRIMARY KEY (Id),
   KEY IX_quote_items_CompanyId_QuoteId (CompanyId, QuoteId, SortOrder),
   KEY IX_quote_items_ProductId (ProductId),

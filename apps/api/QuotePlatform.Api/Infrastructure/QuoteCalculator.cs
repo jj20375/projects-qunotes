@@ -27,6 +27,22 @@ public static class QuoteCalculator
         var digits = Digits(currency);
         var priced = items.Where(value => value.LineType == QuoteLineTypes.Item).ToList();
         var subtotal = priced.Sum(value => LineAmount(value, digits));
+        var (discount, net, tax, total) = Summarize(subtotal, digits, discountType, discountValue, taxType, taxIncluded, taxRate);
+        decimal? cost = priced.Any(value => value.UnitCost is not null) ? Round(priced.Sum(value => value.Quantity * (value.UnitCost ?? 0)), digits) : null;
+        return new QuoteTotals(subtotal, discount, net, tax, total, cost, cost is null ? null : net - cost);
+    }
+
+    /// <summary>由明細小計算出整單折扣、未稅、稅額與總計。</summary>
+    /// <param name="subtotal">明細金額合計（已四捨五入到幣別位數）。</param>
+    /// <param name="digits">幣別小數位數。</param>
+    /// <param name="discountType">整單折扣方式。</param>
+    /// <param name="discountValue">折扣百分比或折讓金額。</param>
+    /// <param name="taxType">稅別。</param>
+    /// <param name="taxIncluded">單價是否含稅。</param>
+    /// <param name="taxRate">稅率百分比。</param>
+    /// <returns>折扣金額、未稅金額、稅額與總計。</returns>
+    public static (decimal Discount, decimal Net, decimal Tax, decimal Total) Summarize(decimal subtotal, int digits, string discountType, decimal discountValue, string taxType, bool taxIncluded, decimal taxRate)
+    {
         var discount = discountType switch
         {
             QuoteDiscountTypes.Percent => Round(subtotal * discountValue / 100m, digits),
@@ -35,26 +51,14 @@ public static class QuoteCalculator
         };
         var afterDiscount = subtotal - discount;
 
-        decimal net, tax, total;
-        if (taxType != QuoteTaxTypes.Taxable || taxRate == 0)
+        if (taxType != QuoteTaxTypes.Taxable || taxRate == 0) return (discount, afterDiscount, 0m, afterDiscount);
+        if (taxIncluded)
         {
-            (net, tax, total) = (afterDiscount, 0m, afterDiscount);
+            var included = Round(afterDiscount / (1 + taxRate / 100m), digits);
+            return (discount, included, afterDiscount - included, afterDiscount);
         }
-        else if (taxIncluded)
-        {
-            total = afterDiscount;
-            net = Round(total / (1 + taxRate / 100m), digits);
-            tax = total - net;
-        }
-        else
-        {
-            net = afterDiscount;
-            tax = Round(net * taxRate / 100m, digits);
-            total = net + tax;
-        }
-
-        decimal? cost = priced.Any(value => value.UnitCost is not null) ? Round(priced.Sum(value => value.Quantity * (value.UnitCost ?? 0)), digits) : null;
-        return new QuoteTotals(subtotal, discount, net, tax, total, cost, cost is null ? null : net - cost);
+        var tax = Round(afterDiscount * taxRate / 100m, digits);
+        return (discount, afterDiscount, tax, afterDiscount + tax);
     }
 
     /// <summary>重算明細金額與表頭合計，寫回 entity。</summary>

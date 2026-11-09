@@ -112,6 +112,44 @@ await step('含稅報價：總額 1,050 → 未稅 1,000、稅 50', async () => 
   await call('PUT', `/api/quotes/${quoteId}`, { token: sales, body: { taxIncluded: false, discountType: 'percent', discountValue: 10, items } });
 });
 
+await step('調整至目標總價：整單折讓、湊不到的總額、鎖定品項不動、存檔保留鎖定', async () => {
+  const fit = (body) => call('POST', '/api/quotes/fit-total', { token: sales, body });
+  const header = { currency: 'TWD', discountType: 'none', taxType: 'taxable', taxIncluded: false, taxRate: 5 };
+  // 未稅報價 1,520,000，客戶要含稅 1,520,000。
+  const discount = await fit({ quote: { ...header, items: [{ name: '整套', quantity: 1, unitPrice: 1520000 }] }, target: 1520000, basis: 'total', mode: 'discount' });
+  assert.equal(discount.status, 200, JSON.stringify(discount.data));
+  assert.deepEqual(
+    [discount.data.exact, discount.data.discountType, discount.data.discountValue, discount.data.totals.netAmount, discount.data.totals.taxAmount, discount.data.totals.total],
+    [true, 'amount', 72381, 1447619, 72381, 1520000],
+  );
+  // 外加 5% 時總計 10 湊不到（未稅 9 → 9、未稅 10 → 11）。
+  const unreachable = (await fit({ quote: { ...header, items: [{ name: 'x', quantity: 1, unitPrice: 100 }] }, target: 10, basis: 'total', mode: 'discount' })).data;
+  assert.deepEqual([unreachable.exact, unreachable.nearestBelow, unreachable.nearestAbove], [false, 9, 11]);
+
+  const fitItems = [
+    { lineType: 'section', name: '一、設備' },
+    { name: '核心設備', quantity: 1, unitPrice: 500000, priceLocked: true },
+    { name: '線材', quantity: 2, unitPrice: 300000 },
+    { name: '施工', quantity: 1, unitPrice: 420000 },
+  ];
+  const allocated = (await fit({ quote: { ...header, items: fitItems }, target: 1520000, basis: 'total', mode: 'allocate' })).data;
+  assert.equal(allocated.totals.total, 1520000);
+  assert.deepEqual(allocated.items.map((line) => line.index), [1, 2, 3], '只回傳品項列，index 對應送出的明細');
+  assert.deepEqual([allocated.items[0].unitPrice, allocated.items[0].changed], [500000, false], '鎖定的品項不動');
+
+  // 套用後存檔：後端重算的總計就是目標，鎖定旗標也保存下來。
+  const applied = fitItems.map((item, index) => ({ ...item, unitPrice: allocated.items.find((line) => line.index === index)?.unitPrice ?? item.unitPrice }));
+  assert.equal((await call('PUT', `/api/quotes/${quoteId}`, { token: sales, body: { ...header, items: applied } })).status, 200);
+  const saved = (await call('GET', `/api/quotes/${quoteId}`, { token: sales })).data;
+  assert.equal(saved.total, 1520000);
+  assert.deepEqual(saved.items.map((item) => item.priceLocked), [false, true, false, false]);
+
+  // 鎖定品項已超過目標、整單折讓不能往上調，都會被拒絕。
+  assert.equal((await fit({ quote: { ...header, items: fitItems }, target: 400000, basis: 'total', mode: 'allocate' })).status, 400);
+  assert.equal((await fit({ quote: { ...header, items: fitItems }, target: 9999999, basis: 'total', mode: 'discount' })).status, 400);
+  await call('PUT', `/api/quotes/${quoteId}`, { token: sales, body: { taxIncluded: false, discountType: 'percent', discountValue: 10, items } });
+});
+
 await step('送審後鎖定；業務不能核准；主管退回需原因', async () => {
   assert.equal((await call('POST', `/api/quotes/${quoteId}/submit`, { token: sales })).status, 200);
   assert.equal((await call('PUT', `/api/quotes/${quoteId}`, { token: sales, body: { items } })).status, 400);
