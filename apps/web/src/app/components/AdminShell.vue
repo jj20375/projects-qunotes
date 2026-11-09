@@ -18,6 +18,7 @@ import { readAccessToken, redirectToLogin, refreshAccessToken } from '@/shared/a
 import { getMeApi, getMenuApi, listScopesApi, logoutApi, SCOPE_PAGE_SIZE, selectScopeApi } from '@/shared/services/auth-service';
 import type { Me, MenuNode, ScopeOption } from '@/shared/types/auth';
 import { DATA_SCOPE_LABELS, meetsRequirement } from '@/shared/types/permissions';
+import NotificationBell from '@/app/components/NotificationBell.vue';
 import { ME_KEY } from '@/app/composables/use-me';
 import { startPresence } from '@/app/composables/use-presence';
 
@@ -173,6 +174,7 @@ async function logout() {
               @change="switchScope"
             />
             <span v-else class="shell-company">{{ me.scope.companyName ?? '平台管理' }}</span>
+            <NotificationBell v-if="me.scope.kind === 'company' && meetsRequirement(me.grants, { code: 'followups' })" />
             <a-dropdown>
               <a-button type="text">{{ me.user.displayName }}</a-button>
               <template #overlay>

@@ -25,6 +25,10 @@ public sealed class QuoteOptions
     public bool SeedDemoData { get; init; }
     /// <summary>虛擬辦公室巡檢 AuthVersion 的間隔秒數（最少 5）；smoke 測試時調短以加快驗證。</summary>
     public int OfficeAuthSweepSeconds { get; init; } = 60;
+    /// <summary>跟進到期通知的掃描間隔秒數（最少 5）；同一個到期日只會通知一次，所以掃描得再頻繁也不會重複。</summary>
+    public int FollowUpNotificationSweepSeconds { get; init; } = 600;
+    /// <summary>每天從台灣時間幾點開始產生跟進到期通知（0–23）；smoke 測試設為 0 以免受測試時間影響。</summary>
+    public int FollowUpNotificationStartHour { get; init; } = 8;
     /// <summary>簽發 file-server 上傳／下載 token 的金鑰，必須與 file-server 的 FILE_TOKEN_KEY 相同（至少 32 字元）。</summary>
     public string FileTokenKey { get; init; } = string.Empty;
     /// <summary>file-server 回呼 API 時帶的共享密鑰，對應 FILE_CALLBACK_SECRET。</summary>

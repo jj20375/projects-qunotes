@@ -8,7 +8,7 @@ namespace QuotePlatform.Api.Modules.FollowUps;
 /// </summary>
 /// <param name="service">跟進紀錄業務服務。</param>
 [Route("api")]
-public sealed class FollowUpsController(FollowUpService service) : ScopedControllerBase
+public sealed class FollowUpsController(FollowUpService service, FollowUpTodoService todo) : ScopedControllerBase
 {
     /// <summary>
     /// 跨專案跟進紀錄總表（目前資料範圍內的所有專案）。
@@ -19,6 +19,16 @@ public sealed class FollowUpsController(FollowUpService service) : ScopedControl
     [HttpGet("followups")]
     public async Task<ActionResult> Search([FromQuery] FollowUpSearchQuery query, CancellationToken cancellationToken) =>
         TryCompany("followups", "read", out var scope) ? ToResult(await service.SearchAsync(scope, query, cancellationToken)) : Forbidden();
+
+    /// <summary>
+    /// 今日待辦：下次聯絡日已逾期、今天或 7 天內到期的專案。
+    /// </summary>
+    /// <param name="query">區間、是否只看自己的與分頁。</param>
+    /// <param name="cancellationToken">非同步取消權杖。</param>
+    /// <returns>傳回 { total, page, pageSize, counts, items }；counts 是三個區間各自的件數。</returns>
+    [HttpGet("followups/todo")]
+    public async Task<ActionResult> Todo([FromQuery] FollowUpTodoQuery query, CancellationToken cancellationToken) =>
+        TryCompany("followups", "read", out var scope) ? ToResult(await todo.ListAsync(scope, query, cancellationToken)) : Forbidden();
 
     /// <summary>
     /// 查詢專案內的跟進紀錄（最新一筆在前）。

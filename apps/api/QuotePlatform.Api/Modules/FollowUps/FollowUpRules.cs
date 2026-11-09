@@ -92,7 +92,7 @@ public static class FollowUpRules
     }
 }
 
-/// <summary>跟進紀錄查詢的共用排序。</summary>
+/// <summary>跟進紀錄與專案跟進狀態查詢的共用規則。</summary>
 public static class FollowUpQueryExtensions
 {
     /// <summary>
@@ -103,4 +103,15 @@ public static class FollowUpQueryExtensions
     /// <remarks>補登一筆較早的拜訪不會變成最新一筆。重算專案狀態、取下次要做的事與時間軸都必須用這個排序，三者才會一致。</remarks>
     public static IOrderedQueryable<ProjectFollowUp> LatestFirst(this IQueryable<ProjectFollowUp> rows) =>
         rows.OrderByDescending(value => value.OccurredAt).ThenByDescending(value => value.CreatedAt).ThenByDescending(value => value.Id);
+
+    /// <summary>
+    /// 還需要跟進的專案：有下次聯絡日，且專案狀態不是未得標、已結案、已取消。
+    /// </summary>
+    /// <param name="projects">專案查詢。</param>
+    /// <returns>篩選後的查詢；與專案列表「待跟進」篩選、今日待辦、到期通知使用同一條規則。</returns>
+    public static IQueryable<Project> WithPendingFollowUp(this IQueryable<Project> projects)
+    {
+        var inactive = FollowUpRules.InactiveProjectStatuses.ToList();
+        return projects.Where(value => value.NextFollowUpOn != null && !inactive.Contains(value.Status));
+    }
 }

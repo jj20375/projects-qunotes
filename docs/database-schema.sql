@@ -810,6 +810,29 @@ CREATE TABLE project_followups (
 ) ENGINE=InnoDB COMMENT='專案跟進紀錄（電話、拜訪、會議等客戶互動與下次聯絡日）';
 
 -- =========================================================
+-- 8.1 站內通知
+-- =========================================================
+
+CREATE TABLE notifications (
+  Id        CHAR(36)     NOT NULL COMMENT '通知唯一識別碼',
+  CompanyId CHAR(36)     NOT NULL COMMENT '所屬公司識別碼',
+  UserId    CHAR(36)     NOT NULL COMMENT '收件人使用者識別碼',
+  Type      VARCHAR(30)  NOT NULL COMMENT '通知類型（followup_due 跟進到期）',
+  ProjectId CHAR(36)     NOT NULL COMMENT '相關專案識別碼',
+  DueOn     DATE         NOT NULL COMMENT '觸發通知的下次聯絡日（台灣日期）',
+  CreatedAt DATETIME(6)  NOT NULL COMMENT '通知產生時間戳記（UTC）',
+  ReadAt    DATETIME(6)  NULL COMMENT '收件人標示已讀的時間戳記（UTC）；NULL 為未讀',
+  PRIMARY KEY (Id),
+  UNIQUE KEY IX_notifications_UserId_Type_ProjectId_DueOn (UserId, Type, ProjectId, DueOn),
+  KEY IX_notifications_CompanyId_UserId_ReadAt_CreatedAt (CompanyId, UserId, ReadAt, CreatedAt),
+  KEY IX_notifications_ProjectId (ProjectId),
+  CONSTRAINT FK_notifications_companies_CompanyId FOREIGN KEY (CompanyId) REFERENCES companies (Id) ON DELETE RESTRICT,
+  CONSTRAINT FK_notifications_projects_ProjectId FOREIGN KEY (ProjectId) REFERENCES projects (Id) ON DELETE RESTRICT,
+  CONSTRAINT FK_notifications_users_UserId FOREIGN KEY (UserId) REFERENCES users (Id) ON DELETE CASCADE,
+  CONSTRAINT CK_notifications_Type CHECK (Type IN ('followup_due'))
+) ENGINE=InnoDB COMMENT='站內通知（跟進到期提醒）；同一收件人、類型、專案、到期日只有一則';
+
+-- =========================================================
 -- 9. 循環關聯：表都建立後再補 FK
 -- =========================================================
 

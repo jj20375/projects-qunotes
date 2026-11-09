@@ -682,6 +682,60 @@ namespace QuotePlatform.Api.Migrations
                     b.ToTable("import_mapping_profiles", (string)null);
                 });
 
+            modelBuilder.Entity("QuotePlatform.Api.Infrastructure.Notification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)")
+                        .HasComment("通知唯一識別碼");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("char(36)")
+                        .HasComment("所屬公司識別碼");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)")
+                        .HasComment("通知產生時間戳記（UTC）");
+
+                    b.Property<DateOnly>("DueOn")
+                        .HasColumnType("date")
+                        .HasComment("觸發通知的下次聯絡日（台灣日期）");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("char(36)")
+                        .HasComment("相關專案識別碼");
+
+                    b.Property<DateTimeOffset?>("ReadAt")
+                        .HasColumnType("datetime(6)")
+                        .HasComment("收件人標示已讀的時間戳記（UTC）；NULL 為未讀");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("varchar(30)")
+                        .HasComment("通知類型（followup_due 跟進到期）");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("char(36)")
+                        .HasComment("收件人使用者識別碼");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("CompanyId", "UserId", "ReadAt", "CreatedAt");
+
+                    b.HasIndex("UserId", "Type", "ProjectId", "DueOn")
+                        .IsUnique();
+
+                    b.ToTable("notifications", null, t =>
+                        {
+                            t.HasComment("站內通知（跟進到期提醒）；同一收件人、類型、專案、到期日只有一則");
+
+                            t.HasCheckConstraint("CK_notifications_Type", "Type IN ('followup_due')");
+                        });
+                });
+
             modelBuilder.Entity("QuotePlatform.Api.Infrastructure.NumberSequence", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -2249,6 +2303,27 @@ namespace QuotePlatform.Api.Migrations
                     b.HasOne("QuotePlatform.Api.Infrastructure.Company", null)
                         .WithMany()
                         .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("QuotePlatform.Api.Infrastructure.Notification", b =>
+                {
+                    b.HasOne("QuotePlatform.Api.Infrastructure.Company", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("QuotePlatform.Api.Infrastructure.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("QuotePlatform.Api.Infrastructure.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

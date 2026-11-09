@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * @component DashboardView
- * 登入後首頁：目前身分與工作範圍；公司範圍且有 dashboard:read 時顯示戰情 Dashboard，
+ * 登入後首頁：目前身分與工作範圍；公司範圍且有 followups:read 時顯示今日待辦、有 dashboard:read 時顯示戰情 Dashboard，
  * 平台範圍顯示常用功能。
  */
 import { computed, defineAsyncComponent } from 'vue';
@@ -19,8 +19,11 @@ const grantColumns = [
 ];
 
 const CompanyDashboard = defineAsyncComponent(() => import('./CompanyDashboard.vue'));
+const TodayTodoCard = defineAsyncComponent(() => import('./TodayTodoCard.vue'));
 const { me, can } = useMe();
 const showDashboard = computed(() => scope.value.kind === 'company' && can('dashboard'));
+// 今日待辦只看跟進紀錄權限，不需要戰情 Dashboard 的權限。
+const showTodo = computed(() => scope.value.kind === 'company' && can('followups', 'read'));
 const scope = computed(() => me.value!.scope);
 const shortcuts = computed(() =>
   routeManifest.filter(
@@ -40,6 +43,8 @@ const shortcuts = computed(() =>
         <a-descriptions-item v-if="scope.isRootAdmin" label="身分"><a-tag color="gold">主管理員</a-tag></a-descriptions-item>
       </a-descriptions>
     </a-card>
+
+    <TodayTodoCard v-if="showTodo" />
 
     <CompanyDashboard v-if="showDashboard" />
 

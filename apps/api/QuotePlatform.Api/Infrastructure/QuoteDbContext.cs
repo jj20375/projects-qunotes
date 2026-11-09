@@ -47,6 +47,7 @@ public sealed class QuoteDbContext(DbContextOptions<QuoteDbContext> options, Com
     public DbSet<ProjectWarranty> ProjectWarranties => Set<ProjectWarranty>();
     public DbSet<ProjectInvoice> ProjectInvoices => Set<ProjectInvoice>();
     public DbSet<ProjectFollowUp> ProjectFollowUps => Set<ProjectFollowUp>();
+    public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<OfficeRoom> OfficeRooms => Set<OfficeRoom>();
     public DbSet<OfficeProfile> OfficeProfiles => Set<OfficeProfile>();
 
@@ -211,6 +212,7 @@ public sealed class QuoteDbContext(DbContextOptions<QuoteDbContext> options, Com
         ConfigureDocuments(modelBuilder);
         ConfigureOffice(modelBuilder);
         ConfigureFollowUps(modelBuilder);
+        ConfigureNotifications(modelBuilder);
 
         foreach (var entityType in modelBuilder.Model.GetEntityTypes().Where(value => typeof(ICompanyOwned).IsAssignableFrom(value.ClrType)))
         {
@@ -404,6 +406,33 @@ public sealed class QuoteDbContext(DbContextOptions<QuoteDbContext> options, Com
             entity.HasOne<Company>().WithMany().HasForeignKey(value => value.CompanyId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Project>().WithMany().HasForeignKey(value => value.ProjectId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<ClientContact>().WithMany().HasForeignKey(value => value.ContactId).OnDelete(DeleteBehavior.SetNull);
+        });
+    }
+
+    /// <summary>站內通知：跟進到期提醒。</summary>
+    private static void ConfigureNotifications(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Notification>(entity =>
+        {
+            entity.ToTable("notifications", table =>
+            {
+                table.HasComment("站內通知（跟進到期提醒）；同一收件人、類型、專案、到期日只有一則");
+                table.HasCheckConstraint("CK_notifications_Type", "Type IN ('followup_due')");
+            });
+            entity.HasKey(value => value.Id);
+            entity.Property(value => value.Id).HasComment("通知唯一識別碼");
+            entity.Property(value => value.CompanyId).HasComment("所屬公司識別碼");
+            entity.Property(value => value.UserId).HasComment("收件人使用者識別碼");
+            entity.Property(value => value.Type).HasMaxLength(30).IsRequired().HasComment("通知類型（followup_due 跟進到期）");
+            entity.Property(value => value.ProjectId).HasComment("相關專案識別碼");
+            entity.Property(value => value.DueOn).HasComment("觸發通知的下次聯絡日（台灣日期）");
+            entity.Property(value => value.CreatedAt).HasComment("通知產生時間戳記（UTC）");
+            entity.Property(value => value.ReadAt).HasComment("收件人標示已讀的時間戳記（UTC）；NULL 為未讀");
+            entity.HasIndex(value => new { value.UserId, value.Type, value.ProjectId, value.DueOn }).IsUnique();
+            entity.HasIndex(value => new { value.CompanyId, value.UserId, value.ReadAt, value.CreatedAt });
+            entity.HasOne<Company>().WithMany().HasForeignKey(value => value.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<User>().WithMany().HasForeignKey(value => value.UserId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<Project>().WithMany().HasForeignKey(value => value.ProjectId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 

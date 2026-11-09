@@ -24,6 +24,7 @@
     "test:smoke:quote-format": "node tests/quote-format-smoke.mjs",
     "test:smoke:office": "node tests/office-smoke.mjs",
     "test:smoke:followups": "node tests/followups-smoke.mjs",
+    "test:smoke:notifications": "node tests/notifications-smoke.mjs",
     "migrations:add": "dotnet ef migrations add --project apps/api/QuotePlatform.Api --output-dir Migrations"
   }
 }

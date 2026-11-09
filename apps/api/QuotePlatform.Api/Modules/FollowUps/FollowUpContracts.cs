@@ -25,6 +25,13 @@ public sealed record FollowUpInput(string? Type, DateTimeOffset? OccurredAt, Gui
 /// <param name="Desc">是否降冪（預設 true）。</param>
 public sealed record FollowUpSearchQuery(string? Keyword, string? Type, Guid? CreatedBy, Guid? DepartmentId, Guid? ProjectId, DateOnly? From, DateOnly? To, int? Page, int? PageSize, string? Sort, bool? Desc);
 
+/// <summary>今日待辦的查詢條件。</summary>
+/// <param name="Range">區間：overdue 已逾期（預設）、today 今天、upcoming 明天起 7 天內。</param>
+/// <param name="Mine">是否只看自己的（自己負責，或最新一筆跟進紀錄由自己寫）；預設 true。</param>
+/// <param name="Page">頁碼（預設 1）。</param>
+/// <param name="PageSize">每頁筆數（預設 10，最多 100）。</param>
+public sealed record FollowUpTodoQuery(string? Range, bool? Mine, int? Page, int? PageSize);
+
 /// <summary>專案目前的跟進狀態；每次寫入後回傳，畫面據此更新。</summary>
 /// <param name="LastFollowUpAt">最新一筆的發生時間；沒有紀錄時為 null。</param>
 /// <param name="NextFollowUpOn">下次聯絡日；沒有排定時為 null。</param>

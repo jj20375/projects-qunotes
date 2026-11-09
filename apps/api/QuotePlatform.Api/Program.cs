@@ -22,6 +22,7 @@ using QuotePlatform.Api.Modules.Clients;
 using QuotePlatform.Api.Modules.Dashboard;
 using QuotePlatform.Api.Modules.Files;
 using QuotePlatform.Api.Modules.FollowUps;
+using QuotePlatform.Api.Modules.Notifications;
 using QuotePlatform.Api.Modules.Identity;
 using QuotePlatform.Api.Modules.Office;
 using QuotePlatform.Api.Modules.ProjectDocuments;
@@ -132,8 +133,12 @@ builder.Services.AddSingleton<PresenceTracker>();
 builder.Services.AddSingleton<RateGate>();
 builder.Services.AddScoped<OfficeService>();
 builder.Services.AddScoped<FollowUpService>();
+builder.Services.AddScoped<FollowUpTodoService>();
+builder.Services.AddScoped<NotificationService>();
+builder.Services.AddScoped<FollowUpNotificationGenerator>();
 builder.Services.AddSingleton<OfficeConnections>();
 builder.Services.AddHostedService<OfficeSweeper>();
+builder.Services.AddHostedService<FollowUpNotificationSweeper>();
 builder.Services.AddSignalR(options =>
 {
     // 走動、聊天訊息都很小；限制單則大小避免被灌大封包。

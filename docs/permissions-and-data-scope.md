@@ -98,6 +98,8 @@
 
 `followups` 跟進紀錄掛在專案下，可見範圍完全繼承專案（`ProjectAccessService.VisibleProjects`），沒有另外的規則：業務主管（部門樹）看得到自己部門與下層部門專案的紀錄，公司管理員看全部，業務看自己負責或參與的專案。判斷依據是專案所屬的部門，不是撰寫人的部門。寫入需要對應的 `followups` CRUD 加上專案寫入身分（負責人、成員或資料範圍內的主管），能寫專案的人可以修改、刪除任何人寫的紀錄；已結案專案只能讀。
 
+今日待辦（`GET /api/followups/todo`）與站內通知（`/api/notifications`）都只需要 `followups:read`，沒有另外的權限項目：待辦的範圍是 `VisibleProjects`，「只看我的」再限縮到自己負責或自己排定下次聯絡的專案；通知由背景工作依收件人當時的有效權限與資料範圍產生，查詢時再依目前的資料範圍過濾一次，收件人失去專案可見性後就不會再看到通知，也不會從通知洩漏專案名稱。
+
 既有角色的 `followups` 同樣由 Seeder 一次性補上（同一個 `permission.default_granted` 機制）：系統角色依下表（業務、業務主管 CRUD，唯讀 R，會計沒有）；自訂角色比照它對 `projects` 的 CRUD，沒有 `projects:read` 的不補。部署此版本時必須執行一次 Seeder。
 
 權限版本變更對辦公室連線的影響：`AuthVersion` 遞增時（改角色權限、部門等），hub 連線收到 `ReauthRequired` 後斷線，前端以 refresh token 換發新 token 再重連，使用者不會被登出，與 REST 收到 401 時的行為一致；帳號、成員身分或公司被停用則送 `ForceDisconnect`，前端登出且不重連。

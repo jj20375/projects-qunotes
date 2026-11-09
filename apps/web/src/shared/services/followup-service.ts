@@ -267,3 +267,59 @@ export function deleteFollowUpApi(id: string): Promise<{ project: FollowUpProjec
 export function dismissNextFollowUpApi(projectId: string): Promise<{ project: FollowUpProjectState }> {
   return apiRequest(`/api/projects/${projectId}/followups/dismiss-next`, { method: 'POST' });
 }
+
+/** 今日待辦的區間 */
+export type FollowUpTodoRange = 'overdue' | 'today' | 'upcoming';
+
+/** 今日待辦區間選項；順序即畫面上的頁籤順序（即將到期＝明天起 7 天內） */
+export const FOLLOW_UP_TODO_RANGES: { value: FollowUpTodoRange; label: string }[] = [
+  { value: 'overdue', label: '已逾期' },
+  { value: 'today', label: '今天' },
+  { value: 'upcoming', label: '7 天內' },
+];
+
+/** 今日待辦的一列（一個還需要跟進的專案） */
+export interface FollowUpTodoRow {
+  /** 專案識別碼 */
+  id: string;
+  /** 專案編號 */
+  projectNo: string;
+  /** 專案名稱 */
+  name: string;
+  /** 專案狀態 */
+  status: string;
+  /** 客戶簡稱，沒有簡稱時為客戶名稱 */
+  clientName: string;
+  /** 下次聯絡日（YYYY-MM-DD） */
+  nextFollowUpOn: string;
+  /** 最後一次跟進時間（ISO 8601）；沒有紀錄為 null */
+  lastFollowUpAt: string | null;
+  /** 下次要做的事 */
+  nextAction: string | null;
+  /** 專案負責人 */
+  owner: FollowUpUser;
+}
+
+/** 今日待辦結果；counts 是三個區間各自的件數，不受目前區間影響 */
+export interface FollowUpTodoList {
+  /** 目前區間的總筆數 */
+  total: number;
+  /** 頁碼 */
+  page: number;
+  /** 每頁筆數 */
+  pageSize: number;
+  /** 各區間件數 */
+  counts: Record<FollowUpTodoRange, number>;
+  /** 本頁的專案 */
+  items: FollowUpTodoRow[];
+}
+
+/**
+ * 查詢今日待辦（區間、是否只看自己的與分頁都由後端處理）
+ *
+ * @param query 區間、是否只看自己的（預設是）與分頁
+ * @returns 目前區間的專案與各區間件數
+ */
+export function listFollowUpTodoApi(query: { range: FollowUpTodoRange; mine: boolean; page: number; pageSize: number }): Promise<FollowUpTodoList> {
+  return apiRequest('/api/followups/todo', { query: { ...query } });
+}

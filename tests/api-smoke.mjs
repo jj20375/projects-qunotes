@@ -82,6 +82,12 @@ await step('平台開通新公司，並拒絕重複代碼', async () => {
 
 await step('公司選單分頁與搜尋由後端處理：offset／limit 不重複、關鍵字過濾、可翻到示範公司', async () => {
   const get = async (query) => (await call('GET', `/api/auth/scopes?${query}`, { token: admin.token })).data.filter((scope) => scope.scopeKind === 'company');
+  // 翻頁驗證需要至少 10 家公司；資料庫剛用 demo:reset 清乾淨時不夠，就自己補足，不能依賴先前測試留下的資料。
+  const existing = (await get('limit=50&offset=0')).length;
+  for (let index = existing; index < 10; index += 1) {
+    const slug = `pg-${suffix}-${index}`;
+    await call('POST', '/api/platform/companies', { token: admin.token, body: { name: `Paging ${suffix} ${index}`, slug, adminAccount: slug, adminDisplayName: '分頁測試', adminPassword: seedPassword } });
+  }
   const first = await get('limit=5&offset=0');
   const second = await get('limit=5&offset=5');
   assert.equal(first.length, 5);

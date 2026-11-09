@@ -236,6 +236,15 @@ flowchart LR
 - 前端：專案詳細頁「跟進紀錄」頁籤（`tab=followups` 可直接開啟）、專案列表「下次聯絡」欄與跟進狀態篩選、`/followups` 總表頁。
 - 既有角色的 `followups` 由 Seeder 一次性補上，部署此版本時必須執行一次 Seeder（見 `docs/permissions-and-data-scope.md`）。
 
+#### 6.9.1 今日待辦與到期通知
+
+- **今日待辦**（首頁卡片，`GET /api/followups/todo?range=overdue|today|upcoming&mine=true|false&page&pageSize`）：列出下次聯絡日已逾期、今天、明天起 7 天內的專案，並回傳三個區間各自的件數（`counts`）。規則與專案列表的「待跟進」相同（有下次聯絡日，且專案不是未得標／已結案／已取消）。範圍一律經 `ProjectAccessService`；「只看我的」（預設）＝自己負責，或最新一筆跟進紀錄（排定下次聯絡的那一筆）是自己寫的。只需要 `followups:read`，不需要 Dashboard 權限。
+- **站內通知**（頁首鈴鐺，`GET /api/notifications`、`POST /api/notifications/{id}/read`、`POST /api/notifications/read-all`）：`notifications` 表只存收件人、專案與到期日，`(UserId, Type, ProjectId, DueOn)` 唯一，**同一個到期日只通知一次**；改期後是新的到期日，會有新通知，舊的通知顯示為「已處理」。通知不存專案名稱，每次查詢才依收件人目前的資料範圍組出文字，專案被移出範圍後通知就不再出現。
+- **產生方式**：`FollowUpNotificationSweeper`（`BackgroundService`）啟動後先掃一次，之後每 `Quote__FollowUpNotificationSweepSeconds` 秒（預設 600）掃一次，每天從台灣時間 `Quote__FollowUpNotificationStartHour` 點（預設 8）起才會產生，所以通知大約在早上 8 點出現；主機停機期間錯過的，開機後第一次掃描補上。每家啟用中的公司各用一個 DI scope，以 `CompanyContext.UseCompany` 明確指定公司。
+- **收件人**：專案負責人，以及最新一筆跟進紀錄的撰寫人（兩者可能同一人）。背景工作沒有 JWT，因此為每位收件人重建登入時的 `RequestScope`（`PermissionGrantService.ForMembershipAsync` 的有效權限與資料範圍），再用 `ProjectAccessService` 判斷看不看得到專案、有沒有 `followups:read`；沒有權限、看不到專案或帳號已停用的人不會收到通知。
+- **重複與多實例**：唯一索引保證多個 API 實例同時掃描也不會重複通知（撞到唯一索引時重試一次，第二次會先查到對方寫入的通知而略過），所以通知產生不需要分散式鎖；但虛擬辦公室的上線狀態仍限單一實例（見第 3 節）。
+- 目前**沒有 Email、LINE 等外部通知**，也沒有自動清除舊通知（每個到期日每位收件人一列，成長很慢）；之後要加 Email 時，掛在 `FollowUpNotificationGenerator` 產生通知的那一刻即可，仍沿用同一份收件人與可見性規則。
+
 ## 7. 主要 API
 
 ### 7.0.1 表格元件（DataTable）
@@ -498,6 +507,7 @@ npm run dev:web:lan          # 同上，但監聽 0.0.0.0，讓區網其他裝�
     - **務必明確指定供應商並清空另一家的金鑰**：本機 `.env.development-api.local` 通常已設定真正的供應商與金鑰，沒有覆寫的話，測試（包含瀏覽器測試上傳的圖片）會真的送到 Google 或 Anthropic，產生費用。
     - Gemini：API 以 `Quote__LoginCaptchaEnabled=false Ai__Ocr__Provider=gemini Quote__GeminiApiKey=test-key Quote__GeminiBaseUrl=http://127.0.0.1:5299` 啟動。
     - 模型與強度的預期值讀自 `ai-settings.json`。要測設定檔熱更新（第 11 項），先複製一份設定檔，API 加上 `Quote__AiSettingsPath=<副本路徑>`，測試加上 `AI_SETTINGS_PATH=<副本路徑> AI_SETTINGS_RELOAD_TEST=1`；測試會改寫副本再還原，不要指向版控中的設定檔。
+  - `npm run test:smoke:notifications`：今日待辦與站內通知 11 項（待辦區間與件數、只看我的、資料範圍、分頁、背景工作產生通知與收件人、同一到期日不重複、已讀、改期與不用跟進後的已處理、換負責人後的可見性、公司隔離）。API 需以 `Quote__LoginCaptchaEnabled=false Quote__FollowUpNotificationSweepSeconds=5 Quote__FollowUpNotificationStartHour=0` 啟動（每 5 秒掃一次、不受測試時間影響）。測試會等背景工作約 1 分鐘。
   - `npm run test:smoke:dashboard`：第五階段 10 項（三種口徑與未稅金額、月／季／年與去年同期、排除已取消訂單、成交率、業務排行、到期保固、逾期應收、部門篩選、資料範圍、無金額權限、會計年度起始月）。每次在新建立的公司裡造資料，不受其他測試資料影響。
   - `npm run test:file`：file-server 單元測試（檔頭判斷、token 格式與 API 相容）。
   - S3 路徑已用臨時 MinIO 容器實測過上傳、下載與 Range；正式環境 compose 預設 `STORAGE_DRIVER=s3`。
