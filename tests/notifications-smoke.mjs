@@ -1,6 +1,6 @@
 /**
  * 今日待辦與站內通知驗證：待辦的區間、「只看我的」與資料範圍；背景工作產生到期通知（收件人、不重複、
- * 專案停止進行或看不到時不通知）、已讀、改期與不用跟進後的「已處理」、專案換負責人後的可見性，以及公司隔離。
+ * 專案停止進行或看不到時不通知）、已讀、改期／不用跟進／刪除跟進後舊通知與待辦立刻消失（刪除最新一筆不會讓前一筆的舊日期復活）、專案換負責人後的可見性，以及公司隔離。
  *
  * 前置：API 以 Quote__LoginCaptchaEnabled=false Quote__FollowUpNotificationSweepSeconds=5 Quote__FollowUpNotificationStartHour=0
  * 啟動（每 5 秒掃描一次、不受測試執行時間影響），並已執行 Seeder。
@@ -164,7 +164,6 @@ await step('通知：背景工作通知負責人與排定下次聯絡的人；�
   const item = forA.data.items.find((value) => value.projectId === projects.over);
   assert.match(item.project.name, /NT-逾期/);
   assert.equal(item.project.clientName, `通知${suffix}`, '客戶顯示簡稱');
-  assert.equal(item.resolved, false);
 
   const forManager = await waitFor('主管收到「今天」那一則', async () => {
     const result = await notices(manager);
@@ -205,22 +204,63 @@ await step('已讀：單則、只看未讀、全部已讀；不能動別人的�
   assert.equal((await ok(notices(salesB))).unreadCount, 1, '全部已讀只影響自己');
 });
 
-await step('改期與不用跟進：舊通知變成已處理，改期後的新到期日會有新通知', async () => {
+await step('改期與不用跟進：舊通知立刻消失、不算未讀，改期後的新到期日會有新通知', async () => {
+  assert.equal((await ok(notices(salesA))).unreadCount, 0);
   // 補登一筆較新的紀錄（發生在兩天前）並把下次聯絡改成昨天。
   await ok(write(salesA, projects.over, { type: 'visit', occurredAt: hoursAgo(48), summary: '現場拜訪', nextFollowUpOn: taipeiDate(-1), nextAction: '回覆規格' }), [201]);
+  const now = await ok(notices(salesA));
+  assert.ok(!now.items.some((value) => value.dueOn === taipeiDate(-3)), '舊到期日的通知在改期當下就消失，不必等背景工作');
   const result = await waitFor('改期後產生新的通知', async () => {
     const value = await notices(salesA);
-    return { done: value.data.total >= 3, value };
+    return { done: value.data.items.some((item) => item.projectId === projects.over && item.dueOn === taipeiDate(-1)), value };
   });
-  const forOver = result.data.items.filter((value) => value.projectId === projects.over);
-  assert.equal(forOver.length, 2);
-  assert.equal(forOver.find((value) => value.dueOn === taipeiDate(-3)).resolved, true, '舊到期日已改期，算已處理');
-  assert.equal(forOver.find((value) => value.dueOn === taipeiDate(-1)).resolved, false);
+  assert.equal(result.data.items.filter((value) => value.projectId === projects.over).length, 1, '同一個專案只剩目前到期日的那一則');
+  assert.equal(result.data.unreadCount, 1, '只有新的那一則是未讀');
 
   await ok(call('POST', `/api/projects/${projects.over}/followups/dismiss-next`, { token: salesA }));
   const after = await ok(notices(salesA));
-  assert.ok(after.items.filter((value) => value.projectId === projects.over).every((value) => value.resolved), '不用跟進後全部算已處理');
+  assert.ok(!after.items.some((value) => value.projectId === projects.over), '不用跟進後通知消失');
+  assert.equal(after.unreadCount, 0, '消失的通知不算在未讀數裡');
   assert.equal((await ok(todo(salesA))).counts.overdue, 0, '待辦也跟著消失');
+});
+
+await step('刪除跟進紀錄：它排定的待辦與通知一起消失，未讀數同步減少', async () => {
+  const clientId = (await ok(call('GET', `/api/projects/${projects.over}`, { token: salesA }))).client.id;
+  const doomed = (await ok(call('POST', '/api/projects', { token: salesA, body: { name: `NT-刪除 ${suffix}`, clientId } }))).id;
+  const record = (await ok(write(salesA, doomed, { type: 'call', occurredAt: hoursAgo(3), summary: '會被刪掉的跟進', nextFollowUpOn: taipeiDate(0), nextAction: '不會發生' }), [201])).item.id;
+  await waitFor('刪除前先收到通知', async () => {
+    const value = await notices(salesA);
+    return { done: value.data.items.some((item) => item.projectId === doomed), value };
+  });
+  const before = await ok(notices(salesA));
+  const todayBefore = (await ok(todo(salesA))).counts.today;
+  await ok(call('DELETE', `/api/followups/${record}`, { token: salesA }));
+  const after = await ok(notices(salesA));
+  assert.ok(!after.items.some((item) => item.projectId === doomed), '刪除後通知立刻消失');
+  assert.equal(after.unreadCount, before.unreadCount - 1, '未讀數同步減少');
+  assert.equal((await ok(todo(salesA))).counts.today, todayBefore - 1, '待辦也一起消失');
+  // 再等兩輪掃描：專案已沒有下次聯絡日，背景工作不會重新產生。
+  await sleep(12_000);
+  assert.ok(!(await ok(notices(salesA))).items.some((item) => item.projectId === doomed), '背景工作不會把它再生出來');
+});
+
+await step('刪除最新一筆：前一筆較早排定的下次聯絡不會復活，待辦與通知都不會冒出舊項目', async () => {
+  const clientId = (await ok(call('GET', `/api/projects/${projects.over}`, { token: salesA }))).client.id;
+  const twice = (await ok(call('POST', '/api/projects', { token: salesA, body: { name: `NT-兩筆 ${suffix}`, clientId } }))).id;
+  await ok(write(salesA, twice, { type: 'call', occurredAt: hoursAgo(96), summary: '第一筆', nextFollowUpOn: taipeiDate(-2), nextAction: '第一筆的待辦' }), [201]);
+  const newer = (await ok(write(salesA, twice, { type: 'visit', occurredAt: hoursAgo(2), summary: '第二筆', nextFollowUpOn: taipeiDate(0), nextAction: '第二筆的待辦' }), [201])).item.id;
+  await waitFor('第二筆的到期通知', async () => {
+    const value = await notices(salesA);
+    return { done: value.data.items.some((item) => item.projectId === twice && item.dueOn === taipeiDate(0)), value };
+  });
+  const overdueBefore = (await ok(todo(salesA))).counts.overdue;
+  const removed = await ok(call('DELETE', `/api/followups/${newer}`, { token: salesA }));
+  assert.equal(removed.project.nextFollowUpOn, null, '專案不再有待跟進');
+  assert.ok(!(await ok(notices(salesA))).items.some((item) => item.projectId === twice), '通知消失');
+  assert.equal((await ok(todo(salesA))).counts.overdue, overdueBefore, '待辦的逾期沒有多出第一筆的舊日期');
+  await sleep(12_000);
+  assert.ok(!(await ok(notices(salesA))).items.some((item) => item.projectId === twice), '背景工作也不會為第一筆的舊日期重新通知');
+  assert.equal((await ok(todo(salesA))).counts.overdue, overdueBefore);
 });
 
 await step('專案換負責人：原收件人看不到專案就不再看到通知，新負責人收到通知', async () => {

@@ -217,7 +217,7 @@ public sealed class FollowUpService(QuoteDbContext db, ProjectAccessService acce
     }
 
     /// <summary>
-    /// 刪除（軟刪除）跟進紀錄；刪掉最新一筆時，狀態倒回前一筆。
+    /// 刪除（軟刪除）跟進紀錄；刪掉最新一筆時，前一筆較早排定的下次聯絡不會復活。
     /// </summary>
     /// <param name="scope">目前使用者範圍。</param>
     /// <param name="id">跟進紀錄識別碼。</param>
@@ -231,9 +231,23 @@ public sealed class FollowUpService(QuoteDbContext db, ProjectAccessService acce
         if (project is null) return ServiceResult<object>.NotFound("找不到跟進紀錄。");
         if (Denied(scope, project, "delete") is { } denied) return denied;
 
+        var latestId = await db.ProjectFollowUps.Where(value => value.ProjectId == row.ProjectId).LatestFirst().Select(value => value.Id).FirstAsync(cancellationToken);
+        var now = DateTimeOffset.UtcNow;
         row.IsDeleted = true;
-        row.DeletedAt = DateTimeOffset.UtcNow;
+        row.DeletedAt = now;
         audit.Add(scope.CompanyId, scope.UserId, "project_followup", row.Id, "delete", Snapshot(row));
+        if (latestId == row.Id)
+        {
+            // 前一筆的下次聯絡早在寫下這一筆時就視為處理過了；刪掉最新一筆若讓它重新生效，
+            // 待辦與通知會冒出一個早已過期的舊項目。把它標成已取消，要再提醒就重新排定。
+            var previous = await db.ProjectFollowUps.Where(value => value.ProjectId == row.ProjectId && value.Id != row.Id).LatestFirst().FirstOrDefaultAsync(cancellationToken);
+            if (previous is { NextFollowUpOn: not null, NextDismissedAt: null })
+            {
+                previous.NextDismissedAt = now;
+                previous.NextDismissedBy = scope.UserId;
+                audit.Add(scope.CompanyId, scope.UserId, "project_followup", previous.Id, "dismiss_next", after: new { previous.NextFollowUpOn, reason = "deleted_latest" });
+            }
+        }
         return ServiceResult<object>.Ok(new { project = await SaveAndRecalculateAsync(row.ProjectId, cancellationToken) });
     }
 
@@ -321,8 +335,23 @@ public sealed class FollowUpService(QuoteDbContext db, ProjectAccessService acce
             .SetProperty(value => value.LastFollowUpAt, value => latest.Select(row => (DateTimeOffset?)row.OccurredAt).FirstOrDefault())
             .SetProperty(value => value.NextFollowUpOn, value => latest.Select(row => row.NextDismissedAt == null ? row.NextFollowUpOn : null).FirstOrDefault()),
             cancellationToken);
+        await RemoveStaleNotificationsAsync(projectId, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return await StateAsync(projectId, cancellationToken);
+    }
+
+    /// <summary>
+    /// 刪掉這個專案已經不是「目前下次聯絡日」的到期通知。
+    /// </summary>
+    /// <remarks>
+    /// 跟進紀錄被刪除、改期或按了「不用跟進」時，舊日期的通知已經沒有意義；在同一交易裡直接刪除，
+    /// 之後改回同一個日期時才會重新通知，而不是沿用舊的（可能已讀的）通知。
+    /// </remarks>
+    private async Task RemoveStaleNotificationsAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        var next = await db.Projects.Where(value => value.Id == projectId).Select(value => value.NextFollowUpOn).SingleAsync(cancellationToken);
+        var notifications = db.Notifications.Where(value => value.ProjectId == projectId && value.Type == NotificationTypes.FollowUpDue);
+        await (next is DateOnly due ? notifications.Where(value => value.DueOn != due) : notifications).ExecuteDeleteAsync(cancellationToken);
     }
 
     private async Task<FollowUpProjectState> StateAsync(Guid projectId, CancellationToken cancellationToken)

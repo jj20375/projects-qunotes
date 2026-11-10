@@ -1,5 +1,5 @@
 /**
- * 專案跟進紀錄驗證：資料範圍與權限、最新一筆規則（補登、刪除倒回、不用跟進）、輸入檢查、已結案唯讀、
+ * 專案跟進紀錄驗證：資料範圍與權限、最新一筆規則（補登、刪除最新一筆不復活前一筆的下次聯絡、不用跟進）、輸入檢查、已結案唯讀、
  * 專案內列表與跨專案總表的篩選分頁，以及專案列表的跟進狀態篩選與排序。
  *
  * 前置：API 以 Quote__LoginCaptchaEnabled=false 啟動，並已執行 Seeder（followups 權限已建立）。
@@ -134,7 +134,7 @@ await step('權限：會計沒有 followups（403）；看不到專案的業務 
   }
 });
 
-await step('最新一筆：補登較早的紀錄不改變下次聯絡；新的一筆沒排定就清空，刪掉後倒回', async () => {
+await step('最新一筆：補登較早的紀錄不改變下次聯絡；新的一筆沒排定就清空；刪掉它也不會讓前一筆的下次聯絡復活', async () => {
   const backfill = await ok(write(salesA, pA, base({ type: 'visit', occurredAt: hoursAgo(72), summary: `補登拜訪 ${suffix}`, nextFollowUpOn: taipeiDate(10) })), [201]);
   r0 = backfill.item.id;
   assert.equal(backfill.project.nextFollowUpOn, taipeiDate(3));
@@ -142,12 +142,24 @@ await step('最新一筆：補登較早的紀錄不改變下次聯絡；新的�
   assert.equal(newer.project.nextFollowUpOn, null);
   assert.equal(newer.project.nextAction, null);
   const removed = await ok(call('DELETE', `/api/followups/${newer.item.id}`, { token: salesA }));
-  assert.equal(removed.project.nextFollowUpOn, taipeiDate(3));
-  assert.equal(removed.project.nextAction, '寄修正版報價');
-  assert.ok(sameInstant(removed.project.lastFollowUpAt, r1At));
+  assert.equal(removed.project.nextFollowUpOn, null, '前一筆較早排定的下次聯絡不會因為刪除最新一筆而復活');
+  assert.equal(removed.project.nextAction, null);
+  assert.ok(sameInstant(removed.project.lastFollowUpAt, r1At), '最後跟進時間仍回到前一筆');
+  const none = await call('POST', `/api/projects/${pA}/followups/dismiss-next`, { token: salesA });
+  assert.equal(none.status, 400, '已經沒有排定下次聯絡');
+  // 前一筆只是標成已取消，內容沒有被改動；刪掉的不是最新一筆時，專案狀態不受影響。
+  const list = await ok(call('GET', `/api/projects/${pA}/followups`, { token: salesA }));
+  const kept = list.items.find((value) => value.id === r1);
+  assert.equal(kept.nextFollowUpOn, taipeiDate(3));
+  assert.notEqual(kept.nextDismissedAt, null);
+  assert.equal(list.items.find((value) => value.id === r0).nextDismissedAt, null, '更早的紀錄不受影響');
 });
 
-await step('不用跟進：清掉下次聯絡、再按一次 400；主管修改日期後重新提醒', async () => {
+await step('不用跟進：改期重新提醒後可再按「不用跟進」、再按一次 400；主管修改日期後重新提醒', async () => {
+  // 先由主管重新排定（日期不同，才會清掉刪除時自動標的「已取消」）。
+  const rescheduled = await ok(call('PUT', `/api/followups/${r1}`, { token: manager, body: base({ occurredAt: r1At, contactId, summary: '確認規格（主管補充）', nextFollowUpOn: taipeiDate(4), nextAction: '寄修正版報價' }) }));
+  assert.equal(rescheduled.project.nextFollowUpOn, taipeiDate(4));
+  assert.equal(rescheduled.item.nextDismissedAt, null);
   const dismissed = await ok(call('POST', `/api/projects/${pA}/followups/dismiss-next`, { token: salesA }));
   assert.equal(dismissed.project.nextFollowUpOn, null);
   const again = await call('POST', `/api/projects/${pA}/followups/dismiss-next`, { token: salesA });

@@ -137,7 +137,7 @@ erDiagram
 | `project_members` | PK(`ProjectId`,`UserId`)；`ProjectRole` = manager／member／viewer；索引(`CompanyId`,`UserId`) 供 `own` 資料範圍查詢 |
 | `project_status_histories` | 狀態異動紀錄 |
 | `project_followups` | 跟進紀錄（電話、拜訪、會議、Email、訊息、其他）；`Type` CHECK 限六種值；軟刪除。索引(`CompanyId`,`ProjectId`,`IsDeleted`,`OccurredAt`) 供專案內時間軸與「最新一筆」，(`CompanyId`,`OccurredAt`) 供跨專案總表。`ContactId` 刪除聯絡人時設為 NULL，`ContactName` 保留姓名快照 |
-| `notifications` | 站內通知；目前只有 `Type=followup_due`（CHECK 限制）。unique(`UserId`,`Type`,`ProjectId`,`DueOn`) 讓同一個到期日只通知一次、重複執行或多實例同時執行都不會重複；索引(`CompanyId`,`UserId`,`ReadAt`,`CreatedAt`) 供未讀數與列表。只存專案識別碼與到期日，不存專案名稱，顯示時才依收件人目前的資料範圍組文字。由背景工作 `FollowUpNotificationSweeper` 每天從台灣時間 8 點起產生，收件人為專案負責人與排定下次聯絡的撰寫人 |
+| `notifications` | 站內通知；目前只有 `Type=followup_due`（CHECK 限制）。unique(`UserId`,`Type`,`ProjectId`,`DueOn`) 讓同一個到期日只通知一次、重複執行或多實例同時執行都不會重複；索引(`CompanyId`,`UserId`,`ReadAt`,`CreatedAt`) 供未讀數與列表。只存專案識別碼與到期日，不存專案名稱，顯示時才依收件人目前的資料範圍組文字。列表只顯示到期日仍是專案目前下次聯絡日的通知，跟進紀錄刪除、改期或「不用跟進」時由 `FollowUpService` 同一交易刪除作廢的通知列。由背景工作 `FollowUpNotificationSweeper` 每天從台灣時間 8 點起產生，收件人為專案負責人與排定下次聯絡的撰寫人 |
 
 專案名稱關鍵字搜尋：資料量小時用 `LIKE`；之後可加 FULLTEXT（ngram parser 支援中文）。
 

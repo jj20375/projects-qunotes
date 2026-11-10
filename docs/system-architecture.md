@@ -241,7 +241,7 @@ flowchart LR
 
 - 規格：`docs/superpowers/specs/2026-11-04-project-followups-design.md`。
 - `project_followups` 掛在專案下（電話、拜訪、會議、Email、訊息、其他），可見範圍完全繼承專案：主管依資料範圍看得到部屬專案的紀錄，判斷依據是專案所屬部門。寫入需要 `followups` CRUD 加專案寫入身分；已結案專案只能讀。
-- 「最新一筆」依 `OccurredAt`（同時間比 `CreatedAt`）判斷，補登較早的紀錄不會蓋掉後來的下次聯絡。`projects.LastFollowUpAt`、`projects.NextFollowUpOn` 是依最新一筆重算的快取，只由 `FollowUpService` 在同一交易內以單一 `ExecuteUpdateAsync`（UPDATE + 子查詢）寫入；寫入前先鎖住專案列，同專案的寫入會排隊序列化，不會死結也不會算出過期狀態。寫了新的一筆，前一筆的待辦自然結束；「不用跟進」只作用在最新一筆。
+- 「最新一筆」依 `OccurredAt`（同時間比 `CreatedAt`）判斷，補登較早的紀錄不會蓋掉後來的下次聯絡。`projects.LastFollowUpAt`、`projects.NextFollowUpOn` 是依最新一筆重算的快取，只由 `FollowUpService` 在同一交易內以單一 `ExecuteUpdateAsync`（UPDATE + 子查詢）寫入；寫入前先鎖住專案列，同專案的寫入會排隊序列化，不會死結也不會算出過期狀態。寫了新的一筆，前一筆的待辦自然結束；刪除最新一筆時，前一筆較早排定的下次聯絡不會復活（刪除時一併標成已取消，專案沒有待跟進，要再提醒就重新排定），避免待辦與通知冒出早已過期的舊項目；「不用跟進」只作用在最新一筆。
 - 待跟進不含未得標、已結案、已取消的專案（日期保留）；逾期以台灣時間的今天為準。
 - API：`GET /api/followups`（跨專案總表）、`GET|POST /api/projects/{id}/followups`、`GET /api/projects/{id}/followups/contacts`（以專案範圍授權，因客戶依客戶部門判斷可見範圍）、`PUT|DELETE /api/followups/{id}`、`POST /api/projects/{id}/followups/dismiss-next`；專案列表支援 `followUp=pending|overdue|none` 與 `sort=nextFollowUpOn|lastFollowUpAt`。沒有 `followups:read` 時專案的跟進欄位為 null，篩選與排序被忽略。
 - 前端：專案詳細頁「跟進紀錄」頁籤（`tab=followups` 可直接開啟）、專案列表「下次聯絡」欄與跟進狀態篩選、`/followups` 總表頁。
@@ -250,7 +250,7 @@ flowchart LR
 #### 6.9.1 今日待辦與到期通知
 
 - **今日待辦**（首頁卡片，`GET /api/followups/todo?range=overdue|today|upcoming&mine=true|false&page&pageSize`）：列出下次聯絡日已逾期、今天、明天起 7 天內的專案，並回傳三個區間各自的件數（`counts`）。規則與專案列表的「待跟進」相同（有下次聯絡日，且專案不是未得標／已結案／已取消）。範圍一律經 `ProjectAccessService`；「只看我的」（預設）＝自己負責，或最新一筆跟進紀錄（排定下次聯絡的那一筆）是自己寫的。只需要 `followups:read`，不需要 Dashboard 權限。
-- **站內通知**（頁首鈴鐺，`GET /api/notifications`、`POST /api/notifications/{id}/read`、`POST /api/notifications/read-all`）：`notifications` 表只存收件人、專案與到期日，`(UserId, Type, ProjectId, DueOn)` 唯一，**同一個到期日只通知一次**；改期後是新的到期日，會有新通知，舊的通知顯示為「已處理」。通知不存專案名稱，每次查詢才依收件人目前的資料範圍組出文字，專案被移出範圍後通知就不再出現。
+- **站內通知**（頁首鈴鐺，`GET /api/notifications`、`POST /api/notifications/{id}/read`、`POST /api/notifications/read-all`）：`notifications` 表只存收件人、專案與到期日，`(UserId, Type, ProjectId, DueOn)` 唯一，**同一個到期日只通知一次**。列表只含「仍待處理」的通知：專案目前的下次聯絡日仍是它的到期日、專案仍在進行、收件人看得到專案；跟進紀錄被刪除、改期或按了「不用跟進」時，`FollowUpService` 在重算專案狀態的同一個交易裡直接刪掉舊到期日的通知（所以不會留在鈴鐺裡，也不算未讀數），改期後的新到期日由背景工作產生新通知。通知不存專案名稱，每次查詢才依收件人目前的資料範圍組出文字。
 - **產生方式**：`FollowUpNotificationSweeper`（`BackgroundService`）啟動後先掃一次，之後每 `Quote__FollowUpNotificationSweepSeconds` 秒（預設 600）掃一次，每天從台灣時間 `Quote__FollowUpNotificationStartHour` 點（預設 8）起才會產生，所以通知大約在早上 8 點出現；主機停機期間錯過的，開機後第一次掃描補上。每家啟用中的公司各用一個 DI scope，以 `CompanyContext.UseCompany` 明確指定公司。
 - **收件人**：專案負責人，以及最新一筆跟進紀錄的撰寫人（兩者可能同一人）。背景工作沒有 JWT，因此為每位收件人重建登入時的 `RequestScope`（`PermissionGrantService.ForMembershipAsync` 的有效權限與資料範圍），再用 `ProjectAccessService` 判斷看不看得到專案、有沒有 `followups:read`；沒有權限、看不到專案或帳號已停用的人不會收到通知。
 - **重複與多實例**：唯一索引保證多個 API 實例同時掃描也不會重複通知（撞到唯一索引時重試一次，第二次會先查到對方寫入的通知而略過），所以通知產生不需要分散式鎖；但虛擬辦公室的上線狀態仍限單一實例（見第 3 節）。

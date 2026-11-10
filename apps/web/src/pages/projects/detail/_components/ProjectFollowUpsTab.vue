@@ -51,6 +51,9 @@ const typeIcons: Record<string, Component> = {
 async function applyState(state: FollowUpProjectState) {
   queryClient.setQueryData<ProjectDetail>(['project', props.project.id], (old) => (old ? { ...old, ...state } : old));
   await queryClient.invalidateQueries({ queryKey: ['followups', props.project.id] });
+  // 下次聯絡日變了，頁首鈴鐺的通知與首頁的待辦也跟著變；不重新整理的話要等下一輪輪詢才會更新。
+  await queryClient.invalidateQueries({ queryKey: ['notifications'] });
+  await queryClient.invalidateQueries({ queryKey: ['followup-todo'] });
 }
 
 const formOpen = ref(false);

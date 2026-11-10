@@ -2,8 +2,8 @@
  * @file notification-service.ts
  * 站內通知 API。目前只有「跟進到期」：專案的下次聯絡日到了或逾期，由後端每天產生，通知負責人與排定下次聯絡的人。
  *
- * 通知只記專案與到期日；顯示的專案名稱與客戶是每次查詢時依目前的資料範圍組出來的，
- * 看不到的專案不會出現在通知裡。
+ * 通知只記專案與到期日；顯示的專案名稱與客戶是每次查詢時依目前的資料範圍組出來的，看不到的專案不會出現在通知裡。
+ * 列表只含「仍待處理」的通知：跟進紀錄被刪除、改期或按了「不用跟進」後，舊通知就消失，也不算在未讀數裡。
  */
 import { apiRequest } from '@/shared/api/http-client';
 
@@ -21,23 +21,21 @@ export interface NotificationItem {
   createdAt: string;
   /** 已讀時間；未讀為 null */
   readAt: string | null;
-  /** 專案摘要；專案已不在資料範圍內時不會有這則通知 */
-  project: { projectNo: string; name: string; status: string; nextFollowUpOn: string | null; clientName: string } | null;
-  /** 已處理：專案已改排下次聯絡、清掉下次聯絡，或專案已停止進行 */
-  resolved: boolean;
+  /** 專案摘要 */
+  project: { projectNo: string; name: string; status: string; clientName: string } | null;
 }
 
 /** 通知列表結果 */
 export interface NotificationList {
   /** 符合條件的總筆數 */
   total: number;
-  /** 未讀則數（不受 unread 篩選影響） */
+  /** 未讀則數（只算仍待處理的，不受 unread 篩選影響） */
   unreadCount: number;
   /** 頁碼 */
   page: number;
   /** 每頁筆數 */
   pageSize: number;
-  /** 本頁通知（未讀在前，其次新到舊） */
+  /** 本頁通知（只含仍待處理的；未讀在前，其次新到舊） */
   items: NotificationItem[];
 }
 

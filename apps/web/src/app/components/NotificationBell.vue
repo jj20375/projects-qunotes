@@ -34,9 +34,8 @@ const refresh = () => queryClient.invalidateQueries({ queryKey: ['notifications'
 const markRead = useMutation({ mutationFn: markNotificationReadApi, onSuccess: refresh });
 const markAll = useMutation({ mutationFn: markAllNotificationsReadApi, onSuccess: refresh });
 
-/** 通知的狀態文字：已處理，或到期日與今天的距離。 */
+/** 通知的狀態文字：到期日與今天的距離。 */
 function statusText(item: NotificationItem) {
-  if (item.resolved) return '已處理';
   const due = followUpDue(item.dueOn, item.project?.status);
   if (due.state === 'overdue') return `已逾期 ${-due.days} 天`;
   return due.state === 'today' ? '今天到期' : `${due.days} 天後`;
@@ -62,13 +61,13 @@ function openItem(item: NotificationItem) {
     <template #content>
       <a-empty v-if="!list.data.value?.items.length" description="沒有通知" :image-style="{ height: '48px' }" />
       <ul v-else class="items">
-        <li v-for="item in list.data.value.items" :key="item.id" :class="{ read: item.readAt, resolved: item.resolved }" @click="openItem(item)">
+        <li v-for="item in list.data.value.items" :key="item.id" :class="{ read: item.readAt }" @click="openItem(item)">
           <span v-if="!item.readAt" class="dot" />
           <div class="body">
             <div class="title">跟進到期：{{ item.project?.projectNo }} {{ item.project?.name }}</div>
             <div class="meta">
               {{ item.project?.clientName }} ・ 下次聯絡 {{ item.dueOn }}
-              <a-tag :color="item.resolved ? 'default' : 'red'" class="tag">{{ statusText(item) }}</a-tag>
+              <a-tag color="red" class="tag">{{ statusText(item) }}</a-tag>
             </div>
           </div>
         </li>
@@ -109,9 +108,6 @@ function openItem(item: NotificationItem) {
 .items li.read .title {
   font-weight: 400;
   color: #666;
-}
-.items li.resolved {
-  opacity: 0.65;
 }
 .dot {
   flex: none;
