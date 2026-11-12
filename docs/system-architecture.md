@@ -234,7 +234,7 @@ flowchart LR
 - hub 以 query `access_token` 驗證（僅此路徑），連線時要求 `office:read`；公司隔離靠群組 `company:{id}`、`office:{companyId}:{departmentId}`。hub 與背景巡檢沒有可靠的 HttpContext，資料庫存取前由 `OfficeService.UseCompany`（轉呼叫 `CompanyContext.UseCompany`）明確指定連線身分的公司。
 - 長連線不會每個請求重新驗證 JWT，由 `OfficeSweeper` 定期比對 `users.AuthVersion`、帳號、成員身分與公司狀態，並開啟 `CloseOnAuthenticationExpiration` 讓連線在 access token 到期時關閉。兩種結果：帳號、成員身分或公司停用 → 送 `ForceDisconnect`，前端登出且不重連；只有 `AuthVersion` 變動（改角色權限、部門等）→ 送 `ReauthRequired`，前端強制換發 token、重新讀取權限後重連，不登出（與 REST 收到 401 的行為一致）。
 - 走動、表情、聊天、上線狀態不寫資料庫；`office_rooms` 存主題、`office_profiles` 存角色、手動狀態與最後在線時間。上線狀態只在 API 記憶體，限單一實例；多實例時需加 SignalR Redis backplane。
-- Nginx 另設獨立的 `location /api/hubs/`（`infra/nginx/default.conf`）：WebSocket upgrade、`access_log off`（token 在 query string）。
+- Nginx 另設獨立的 `location /api/hubs/`（`infra/nginx/default.conf.template`）：WebSocket upgrade、`access_log off`（token 在 query string）。
 - 既有公司角色的 `office:read` 由 Seeder 一次性補上，部署此版本時必須執行一次 Seeder（見 `docs/permissions-and-data-scope.md` 3.2）。
 
 ### 6.9 專案跟進紀錄
@@ -441,10 +441,15 @@ Mac 本機直接跑 API 時改成 `Server=127.0.0.1;Port=9529;…`，設定放�
 ├─ docker-compose.yml             api、file-server、minio、web（nginx）；不含 mariadb
 ├─ docker-compose.shared-db.yml   overlay：api 加入外部 network；volume 改 bind 到 ${DATA_ROOT}/quote/
 └─ deploy/
-   ├─ .env.<environment>.example  DB_MODE=shared、SHARED_DB_CONTAINER、SHARED_DB_NETWORK、DATA_ROOT、DB_PASSWORD、DB_ROOT_PASSWORD
-   ├─ ensure-shared-db.sh / .ps1  在共用 MariaDB 建立 quote_platform 與 quote_app
-   └─ backup.sh / restore.sh      只處理 quote_ 開頭的資料庫與本系統的 MinIO
+   ├─ .env.<環境>.example         development／demo／production 的設定範本；實際檔案 deploy/.env.<環境> 不進版控
+   ├─ deploy.sh                   一支指令部署：選設定檔、準備映像、建資料庫帳號、啟動、等 API 就緒
+   ├─ export-images.sh            開發機打包 linux/amd64 映像，供 demo／正式機離線載入
+   ├─ dc.sh / compose-lib.sh      docker compose 包裝，固定帶上 shared-db overlay 與 deploy/.env
+   ├─ ensure-shared-db.sh         在共用 MariaDB 建立 quote_platform 與 quote_app
+   └─ backup.sh / restore.sh      只處理 quote_ 開頭的資料庫與本系統的 MinIO，備份放 backups/
 ```
+
+三個環境用同一套腳本，差異只在 `deploy/.env.<環境>`（`DEPLOY_MODE`、`SHARED_DB_*`、`DATA_ROOT`、`REFRESH_COOKIE_SECURE`、`WEB_BIND`、密碼與金鑰）。操作流程見 [deploy/DEPLOY-FLOW.md](../deploy/DEPLOY-FLOW.md)。
 
 `docker-compose.shared-db.yml` 的重點（照抄美達特的寫法）：
 
@@ -455,8 +460,6 @@ services:
 
 volumes:
   minio-data: { driver: local, driver_opts: { type: none, o: bind, device: "${DATA_ROOT}/quote/minio" } }
-  file-data:  { driver: local, driver_opts: { type: none, o: bind, device: "${DATA_ROOT}/quote/files" } }
-  api-logs:   { driver: local, driver_opts: { type: none, o: bind, device: "${DATA_ROOT}/quote/logs" } }
 
 networks:
   central-db:
@@ -479,7 +482,7 @@ FLUSH PRIVILEGES;
 ```
 
 - 本系統是單一資料庫，**API 不需要 root**：root 密碼只給 ensure-shared-db 與備份／還原腳本用，不放進 API container 的環境變數。（美達特的 API 因為要動態建客戶庫才需要 root。）
-- migration 由 API 以 `quote_app` 身分套用，並維持美達特的 opt-in 旗標（`MigrateOnStart`、`BootstrapOnStart`）。
+- migration 由 API 以 `quote_app` 身分套用，並維持美達特的 opt-in 旗標（`MigrateOnStart`、`BootstrapOnStart`）。compose 預設兩者皆為 `false`；有 schema 變更或新增權限時，用 `deploy.sh --migrate`／`--bootstrap` 單次開啟，API 就緒後腳本會以 `.env` 的設定重建 api，旗標不會殘留。
 
 ### 9.4 備份與隔離注意事項
 
@@ -487,6 +490,10 @@ FLUSH PRIVILEGES;
 - 美達特在 shared 模式下 API 持有 root 密碼（美達特 `deploy/README.md`「已知限制」），技術上仍可讀寫 `quote_platform`。這是美達特那邊的待辦（改用只授權 `metat\_%` 的 provisioning 帳號），本系統無法單方面解決，先記為已知風險。
 - 共用 MariaDB 有資源限制（central-mariadb 為 0.5 CPU／512MB），兩個系統的負載會互相影響；Dashboard 聚合量大時優先改用月結快照表。
 - 不得修改共用 stack 的 `mariadb`、`phpmyadmin`、`mariadb-network` 名稱。
+
+### 9.5 使用者真實 IP
+
+API 的 `ForwardedHeaders` 只信任一跳（Program.cs），所以由 web 容器的 nginx 負責還原使用者 IP：`infra/nginx/default.conf.template` 以 realip 模組，只在連線來源屬於 `TRUSTED_PROXY_CIDR` 時從 `X-Forwarded-For` 取出使用者 IP，往 API 只送一筆 `X-Forwarded-For`；`X-Forwarded-Proto` 也只採信信任來源。`TRUSTED_PROXY_CIDR` 由各環境設定檔決定（正式機 `172.16.0.0/12`，demo／開發 `127.0.0.1/32`），在容器啟動時由 nginx 官方 entrypoint 代入。nginx 上游用變數＋`resolver 127.0.0.11`，api／file-server 重建換 IP 後不必重啟 web。細節見 [deploy/DEPLOY-FLOW.md](../deploy/DEPLOY-FLOW.md)。
 
 ## 10. 本機開發與驗證
 

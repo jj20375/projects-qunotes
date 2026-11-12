@@ -1,0 +1,6 @@
+# 部署腳本與設定檔一律 LF：repo 可能經由 Windows（Hyper-V 主機）轉交給 demo 機，
+# CRLF 會讓 bash 出現 $'\r': command not found，或讓密碼多一個看不見的字元。
+*.sh            text eol=lf
+deploy/.env*    text eol=lf
+*.conf          text eol=lf
+Dockerfile      text eol=lf

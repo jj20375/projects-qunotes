@@ -1,0 +1,89 @@
+# web 容器的 nginx 設定範本。容器啟動時 nginx 官方 entrypoint 以 envsubst 代入
+# 環境變數 TRUSTED_PROXY_CIDR 後輸出成 /etc/nginx/conf.d/default.conf（只代換 NGINX_ENVSUBST_FILTER
+# 允許的變數，$host、$remote_addr 這類 nginx 變數不受影響）。
+#
+# 後台靜態檔與 API 同一個 origin：refresh token cookie（SameSite=Strict、Path=/api/auth）才會被瀏覽器帶上，也不需要 CORS。
+
+# 連線是否來自信任的前置代理。用 $realip_remote_addr（realip 改寫前的實際連線來源）判斷，
+# 不能用 $remote_addr，它在 realip 之後已經是使用者 IP。
+geo $realip_remote_addr $from_trusted_proxy {
+    default 0;
+    ${TRUSTED_PROXY_CIDR} 1;
+}
+
+# 只有前置代理傳來的 X-Forwarded-Proto 才採信；直接連進來的請求一律用本層的 $scheme，避免偽造。
+map "$from_trusted_proxy:$http_x_forwarded_proto" $forwarded_proto {
+    "~^1:(?<proto>https?)$" $proto;
+    default $scheme;
+}
+
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    client_max_body_size 20m;
+
+    # 上游用變數＋Docker 內建 DNS：寫死主機名稱時 nginx 只在啟動時解析一次，
+    # api／file-server 容器重建換了 IP 後會一直轉到舊 IP（502），直到 web 也重啟。
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    set $api_upstream http://api:8080;
+    set $file_upstream http://file-server:5190;
+
+    # 真實 IP：正式機前面還有一層 nginx，連線來源是 Docker 閘道。只在來源屬於 TRUSTED_PROXY_CIDR 時
+    # 從 X-Forwarded-For 由右往左取第一個不受信任的位址；使用者自帶的偽造值在最左邊，不會被採用。
+    # 之後往上游只送一筆 $remote_addr，API「只信任一跳」的設定就會拿到使用者 IP（登入節流與 audit 依賴它）。
+    set_real_ip_from ${TRUSTED_PROXY_CIDR};
+    real_ip_header X-Forwarded-For;
+    real_ip_recursive on;
+
+    # file-server 回呼 API 的內部端點只允許 compose 內網，對外一律 404。
+    location /api/internal/ {
+        return 404;
+    }
+
+    location /files/ {
+        proxy_pass $file_upstream;
+        proxy_request_buffering off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $forwarded_proto;
+    }
+
+    # 圖像識別匯入會等 Claude 回應（API 端最多 150 秒、重試 1 次），預設 60 秒會先逾時。
+    location = /api/quote-imports {
+        proxy_pass $api_upstream;
+        proxy_read_timeout 330s;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $forwarded_proto;
+    }
+
+    # 虛擬辦公室 SignalR：需要 WebSocket upgrade；token 在 query string，關閉 access log 避免寫進日誌。
+    location /api/hubs/ {
+        proxy_pass $api_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $forwarded_proto;
+        proxy_read_timeout 120s;
+        access_log off;
+    }
+
+    location /api/ {
+        proxy_pass $api_upstream;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $forwarded_proto;
+    }
+
+    # Astro static 以 /admin/users/index.html 形式輸出頁面。
+    location / {
+        try_files $uri $uri/ $uri.html =404;
+    }
+
+    location /_astro/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+}

@@ -1,12 +1,20 @@
 # 專案報價管理系統 compose stack（不含 MariaDB）
 #
 # MariaDB 沿用主機上的共用 container（美達特的 shared-db／central-mariadb），
-# 必須疊上 docker-compose.shared-db.yml 才能連到資料庫：
-#   docker compose -f docker-compose.yml -f docker-compose.shared-db.yml --env-file deploy/.env up -d
-# 首次部署前先執行 deploy/ensure-shared-db.sh 建立 quote_platform 與 quote_app。
+# 必須疊上 docker-compose.shared-db.yml 才能連到資料庫，所以不要直接下 docker compose：
+#   部署：./deploy/deploy.sh --environment=<development|demo|production>
+#   維運：./deploy/dc.sh ps | logs -f api（自動帶上 overlay 與 deploy/.env）
+# 各環境差異放在 deploy/.env.<環境>；流程見 deploy/DEPLOY-FLOW.md。
 #
 # 檔案本體由 file-server 存在 MinIO（獨立 bucket 與帳號，不與美達特共用）。
 name: quote-platform
+
+# Docker 預設的 json-file 日誌不會輪替，demo／正式機長期跑會把磁碟塞滿。
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
 
 services:
   api:
@@ -15,6 +23,7 @@ services:
       dockerfile: apps/api/QuotePlatform.Api/Dockerfile
     image: quote-platform-api:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    logging: *default-logging
     environment:
       ASPNETCORE_URLS: http://0.0.0.0:8080
       # 連線目標 mariadb 是共用 MariaDB 在外部 network 上的名稱（見 docker-compose.shared-db.yml）。
@@ -22,7 +31,8 @@ services:
       Quote__JwtKey: ${JWT_KEY:?請在 deploy/.env 設定 JWT_KEY}
       Quote__RefreshCookieSecure: ${REFRESH_COOKIE_SECURE:-true}
       Quote__LoginCaptchaEnabled: "true"
-      Quote__MigrateOnStart: ${MIGRATE_ON_START:-true}
+      # 預設不自動套用 schema：重啟容器不該悄悄改資料庫。需要時用 deploy.sh --migrate 單次開啟。
+      Quote__MigrateOnStart: ${MIGRATE_ON_START:-false}
       Quote__BootstrapOnStart: ${BOOTSTRAP_ON_START:-false}
       Quote__BootstrapAdminPassword: ${BOOTSTRAP_ADMIN_PASSWORD:-}
       Quote__SeedDemoData: "false"
@@ -51,6 +61,7 @@ services:
       dockerfile: file-server/Dockerfile
     image: quote-platform-file-server:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - minio
     environment:
@@ -74,6 +85,7 @@ services:
   minio:
     image: minio/minio:${MINIO_TAG:-RELEASE.2025-09-07T16-13-09Z}
     restart: unless-stopped
+    logging: *default-logging
     command: server /data
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
@@ -92,9 +104,13 @@ services:
       dockerfile: apps/web/Dockerfile
     image: quote-platform-web:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - api
       - file-server
+    environment:
+      # 只有從這個網段連進來的請求，才採信它帶的 X-Forwarded-For 作為使用者 IP（見 infra/nginx/default.conf.template）。
+      TRUSTED_PROXY_CIDR: ${TRUSTED_PROXY_CIDR:-127.0.0.1/32}
     ports:
       - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-8096}:80"
     deploy:

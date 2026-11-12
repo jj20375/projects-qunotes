@@ -61,3 +61,4 @@ npm run dev:web         # http://127.0.0.1:4341
 - [docs/showcase-demo.md](./docs/showcase-demo.md)：對客戶展示的帳號、資料與展示流程；`npm run demo:reset` 重置
 - [docs/database-planning.md](./docs/database-planning.md)：資料庫規劃與 ER 圖
 - [docs/database-schema.sql](./docs/database-schema.sql)：MariaDB DDL 草稿
+- [deploy/DEPLOY-FLOW.md](./deploy/DEPLOY-FLOW.md)：開發機、demo 機、正式機的部署流程（`./deploy/deploy.sh --environment=<環境>`）
