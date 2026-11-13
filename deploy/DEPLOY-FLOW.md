@@ -88,20 +88,20 @@ Hyper-V 主機慣例是一個專案一個 `/srv/<專案名>`。程式碼與資�
 demo 機對外是 `https://<網域>/quote-platform/app/`：Windows 主機的 IIS 在網站底下新增一個 Application，剝掉前綴後轉到 VM（`192.168.84.201:8096`）。
 
 ```
-瀏覽器 ─https─▶ IIS Application「quote-platform/app」（deploy/iis/web.config，剝前綴）
+瀏覽器 ─https─▶ IIS Application「quote-platform」（deploy/iis/web.config，規則比對 app/ 後轉發）
                   └─▶ http://192.168.84.201:8096/ ─▶ web（nginx）─┬─▶ api
                                                                   └─▶ file-server
 ```
 
 1. `deploy/.env.demo`：`APP_BASE_PATH=/quote-platform/app`、`REFRESH_COOKIE_SECURE=true`、`WEB_BIND=0.0.0.0`。
 2. 在 demo 機部署：`./deploy/deploy.sh --environment=demo`（前端依前綴建置，cookie Path 也帶前綴）。
-3. IIS：在網站上「新增應用程式」，別名 `quote-platform/app`，實體路徑指向空資料夾（例如 `C:\inetpub\quote-platform-app-proxy`），放入 `deploy/iis/web.config`。前置需求寫在該檔開頭（URL Rewrite、ARR 的 Enable proxy、允許的伺服器變數、WebSocket 功能；美達特已用過同一台 IIS，通常都已具備）。
-4. 驗證：先在 VM 上 `curl -I http://127.0.0.1:8096/login` 確認容器回 200，再從瀏覽器開 `https://<網域>/quote-platform/app/` 登入、換頁、開附件、進虛擬辦公室。也測一次沒有結尾斜線的 `/quote-platform/app`，應轉到帶斜線的網址。
+3. IIS：在網站上「新增應用程式」，別名 `quote-platform`（只有這一段，`app` 由 web.config 的規則比對），實體路徑指向空資料夾（例如 `C:\inetpub\quote-platform-proxy`），放入 `deploy/iis/web.config`。前置需求寫在該檔開頭（URL Rewrite、ARR 的 Enable proxy、WebSocket 功能；美達特已用過同一台 IIS，通常都已具備）。
+4. 驗證：先在 VM 上 `curl -I http://127.0.0.1:8096/login` 確認容器回 200，再從瀏覽器開 `https://<網域>/quote-platform/app/` 登入、換頁、開附件、進虛擬辦公室。也測一次只輸入 `https://<網域>/quote-platform/`，應被帶到 `/quote-platform/app`。
 5. 真實 IP：照 `.env.demo` 的註解找出 IIS 主機的 IP，填進 `TRUSTED_PROXY_CIDR`（`<IP>/32`）後重新部署。
 
 注意：
 
-- `APP_BASE_PATH`、IIS 的別名、`web.config` 裡的路徑必須完全一致；改了任何一個都要一起改，並重新執行 `deploy.sh`（只重啟容器不會重新產生靜態檔）。
+- `APP_BASE_PATH` 必須等於「IIS 別名 + web.config 規則裡的 app」（目前是 `/quote-platform` + `/app`）；改了任何一個都要一起改，並重新執行 `deploy.sh`（只重啟容器不會重新產生靜態檔）。
 - 設了前綴後直接開 `http://<VM IP>:8096/` 會缺樣式、無法登入，這是預期現象，只能經 IIS 存取。
 - 本機不用 IIS 也能驗證：在 `deploy/.env.development` 設 `APP_BASE_PATH=/quote-platform/app` 後部署，再 `./deploy/dc.sh --profile dev-proxy up -d dev-proxy`，開 `http://127.0.0.1:8097/quote-platform/app/`。dev-proxy 只模擬剝前綴，不需要時 `./deploy/dc.sh --profile dev-proxy stop dev-proxy`。
 
