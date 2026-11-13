@@ -62,11 +62,20 @@ if [[ "$skip_build" == false ]]; then
   build_one apps/web/Dockerfile "quote-platform-web:${image_tag}"
 
   echo "[INFO] 取得基礎映像（${TARGET_PLATFORM}）…"
-  # MinIO 官方已停止在 Docker Hub 發布社群版，Hub 拉不到時改從 Quay 取同一個 tag 並改名。
-  if ! docker pull --platform "$TARGET_PLATFORM" "minio/minio:${minio_tag}"; then
-    echo "[INFO] Docker Hub 取不到，改由 quay.io 取得…"
-    docker pull --platform "$TARGET_PLATFORM" "quay.io/minio/minio:${minio_tag}"
+  # MinIO 官方已不再公開發布映像：Docker Hub 的 minio/minio 倉庫已不存在，Quay 的舊 tag 也會回 401。
+  # 所以優先使用本機已載入的 ${TARGET_PLATFORM} 版本（Apple Silicon 上 docker pull 預設只會有 arm64，不能拿來打包）。
+  # docker save --platform 在該平台內容不在本機時一定會失敗，用它判斷最可靠。
+  if docker save --platform "$TARGET_PLATFORM" "minio/minio:${minio_tag}" >/dev/null 2>&1; then
+    echo "[INFO] minio/minio:${minio_tag} 本機已有 ${TARGET_PLATFORM} 內容，略過下載。"
+  elif docker pull --platform "$TARGET_PLATFORM" "minio/minio:${minio_tag}" 2>/dev/null; then
+    :
+  elif docker pull --platform "$TARGET_PLATFORM" "quay.io/minio/minio:${minio_tag}" 2>/dev/null; then
     docker tag "quay.io/minio/minio:${minio_tag}" "minio/minio:${minio_tag}"
+  else
+    echo "[錯誤] 取不到 minio/minio:${minio_tag}（${TARGET_PLATFORM}）：Docker Hub 與 quay.io 都已不提供。" >&2
+    echo "       需要先把 ${TARGET_PLATFORM} 版 MinIO 載入本機並標成 minio/minio:${minio_tag}，" >&2
+    echo "       例如從已打包過它的映像包取出，做法見 deploy/DEPLOY-FLOW.md 的排錯表。" >&2
+    exit 1
   fi
   docker pull --platform "$TARGET_PLATFORM" alpine:latest
 fi

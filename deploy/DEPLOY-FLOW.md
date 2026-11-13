@@ -163,6 +163,7 @@ proxy_set_header X-Forwarded-Proto $scheme;
 | 症狀 | 常見原因 |
 |---|---|
 | 容器啟動即 `exec format error` | 映像不是 amd64。回開發機重跑 `export-images.sh`（它會在打包前擋下） |
+| `export-images.sh` 拉不到 `minio/minio`（Docker Hub 說倉庫不存在、quay 回 401） | MinIO 官方已不再公開發布映像。需要一份 amd64 版：從已打包過它的映像包（例如美達特的 `metat-images-*.tar.gz`，內含 `minio/minio:latest`）只取出該映像，改標成 `minio/minio:${MINIO_TAG}` 載入本機。不要整包 `docker load`，會覆蓋本機同名標籤。載入後 `export-images.sh` 會自動採用，只需做一次。 |
 | `Access denied for user 'quote_app'` | 密碼與 `.env` 不一致，或還原後沒重新授權；重跑 `./deploy/ensure-shared-db.sh` |
 | 找不到 network `mariadb-network` | 共用 MariaDB 沒啟動，或 `SHARED_DB_NETWORK` 填錯（Mac 是 `shared-db`） |
 | API 一直沒就緒 | `./deploy/dc.sh logs --tail=100 api` |
