@@ -8,6 +8,7 @@ import { computed, ref } from 'vue';
 import QuotePreviewDrawer from '@/app/components/QuotePreviewDrawer.vue';
 import type { InvoiceLookup } from '@/shared/services/document-service';
 import { formatMoney } from '@/shared/types/business';
+import { withBasePath } from '@/shared/utils/base-path';
 
 const props = defineProps<{ open: boolean; lookup: InvoiceLookup | null; currentProjectId?: string }>();
 const emit = defineEmits<{ close: [] }>();
@@ -53,7 +54,7 @@ const sameProject = computed(() => !!project.value && project.value.id === props
           <a-tag v-else color="orange">其他專案</a-tag>
         </a-descriptions-item>
       </a-descriptions>
-      <a-button v-if="project && !sameProject" type="link" :href="`/projects/detail?id=${project.id}`" target="_blank" class="link">開啟這個專案</a-button>
+      <a-button v-if="project && !sameProject" type="link" :href="withBasePath(`/projects/detail?id=${project.id}`)" target="_blank" class="link">開啟這個專案</a-button>
 
       <h4 class="section">對應訂單</h4>
       <a-descriptions v-if="order" :column="2" size="small" bordered>

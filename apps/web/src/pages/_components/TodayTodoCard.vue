@@ -10,6 +10,7 @@ import DataTable, { type TableChange } from '@/app/components/DataTable.vue';
 import { FOLLOW_UP_TODO_RANGES, followUpDue, listFollowUpTodoApi, type FollowUpTodoRow } from '@/shared/services/followup-service';
 import { dataColumns } from '@/shared/table/data-table';
 import { projectStatusColor, projectStatusLabel } from '@/shared/types/business';
+import { withBasePath } from '@/shared/utils/base-path';
 
 const query = reactive({ range: 'overdue' as 'overdue' | 'today' | 'upcoming', mine: true, page: 1, pageSize: 5 });
 const list = useQuery({ queryKey: ['followup-todo', query], queryFn: () => listFollowUpTodoApi({ ...query }), placeholderData: keepPreviousData });
@@ -85,12 +86,12 @@ const columns = [
           <div class="muted small">{{ dueText(record) }}</div>
         </template>
         <template v-else-if="columnId === 'name'">
-          <a :href="`/projects/detail?id=${record.id}&tab=followups`">{{ record.projectNo }} {{ record.name }}</a>
+          <a :href="withBasePath(`/projects/detail?id=${record.id}&tab=followups`)">{{ record.projectNo }} {{ record.name }}</a>
           <a-tag :color="projectStatusColor(record.status)" class="status">{{ projectStatusLabel(record.status) }}</a-tag>
         </template>
         <template v-else-if="columnId === 'nextAction'">{{ record.nextAction ?? '—' }}</template>
         <template v-else-if="columnId === 'ops'">
-          <a :href="`/projects/detail?id=${record.id}&tab=followups`">寫跟進</a>
+          <a :href="withBasePath(`/projects/detail?id=${record.id}&tab=followups`)">寫跟進</a>
         </template>
       </template>
       <template #empty>

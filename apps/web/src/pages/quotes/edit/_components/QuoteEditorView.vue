@@ -30,6 +30,7 @@ import QuoteItemsTable from './QuoteItemsTable.vue';
 import QuoteFitTotalModal from './QuoteFitTotalModal.vue';
 import AttachmentList from '@/app/components/AttachmentList.vue';
 import TermsEditor from '@/app/components/TermsEditor.vue';
+import { withBasePath } from '@/shared/utils/base-path';
 
 const params = new URLSearchParams(window.location.search);
 const quoteId = ref(params.get('id'));
@@ -122,7 +123,7 @@ async function save(): Promise<boolean> {
       const created = await createQuoteApi(projectId!, payload());
       message.success(`已建立報價單 ${created.quoteNo}`);
       quoteId.value = created.id;
-      history.replaceState(null, '', `/quotes/edit?id=${created.id}`);
+      history.replaceState(null, '', withBasePath(`/quotes/edit?id=${created.id}`));
     } else {
       await updateQuoteApi(quoteId.value!, payload());
       message.success('已儲存');
@@ -183,7 +184,7 @@ async function run(action: QuoteAction) {
       okType: 'danger',
       onOk: async () => {
         await deleteQuoteApi(id);
-        window.location.assign(`/projects/detail?id=${quote.value!.project.id}`);
+        window.location.assign(withBasePath(`/projects/detail?id=${quote.value!.project.id}`));
       },
     });
     return;
@@ -204,7 +205,7 @@ async function run(action: QuoteAction) {
     if (action === 'revise') {
       const revision = await reviseQuoteApi(id);
       message.success(`已建立第 ${revision.revisionNo} 版草稿`);
-      window.location.assign(`/quotes/edit?id=${revision.id}`);
+      window.location.assign(withBasePath(`/quotes/edit?id=${revision.id}`));
       return;
     }
     await transitionQuoteApi(id, action);
@@ -244,7 +245,7 @@ const primaryActions = computed(() => (quote.value?.actions ?? []).filter((actio
 
 <template>
   <a-result v-if="notFound" status="404" title="找不到報價單" sub-title="報價單不存在，或不在您的資料範圍內。">
-    <template #extra><a-button type="primary" href="/quotes">回報價單列表</a-button></template>
+    <template #extra><a-button type="primary" :href="withBasePath('/quotes')">回報價單列表</a-button></template>
   </a-result>
   <a-skeleton v-else-if="!quote && !project" active />
   <a-space v-else direction="vertical" :size="16" style="width: 100%">
@@ -252,7 +253,7 @@ const primaryActions = computed(() => (quote.value?.actions ?? []).filter((actio
       <div class="head">
         <div>
           <div class="crumb">
-            <a v-if="projectInfo" :href="`/projects/detail?id=${projectInfo.id}`">{{ projectInfo.projectNo }} {{ projectInfo.name }}</a>
+            <a v-if="projectInfo" :href="withBasePath(`/projects/detail?id=${projectInfo.id}`)">{{ projectInfo.projectNo }} {{ projectInfo.name }}</a>
           </div>
           <h2>
             {{ quote ? quoteNumber(quote) : '新報價單' }}
@@ -263,7 +264,7 @@ const primaryActions = computed(() => (quote.value?.actions ?? []).filter((actio
           <a-space v-if="quote && quote.revisions.length > 1" wrap :size="4" class="revisions">
             <span class="muted">版本：</span>
             <a-tag v-for="revision in quote.revisions" :key="revision.id" :color="revision.id === quote.id ? 'blue' : undefined">
-              <a :href="`/quotes/edit?id=${revision.id}`">R{{ revision.revisionNo }} {{ quoteStatusLabel(revision.status) }}</a>
+              <a :href="withBasePath(`/quotes/edit?id=${revision.id}`)">R{{ revision.revisionNo }} {{ quoteStatusLabel(revision.status) }}</a>
             </a-tag>
           </a-space>
         </div>

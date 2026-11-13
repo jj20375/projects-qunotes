@@ -23,6 +23,7 @@ import { dataColumns } from '@/shared/table/data-table';
 import { PROJECT_STATUSES } from '@/shared/types/business';
 import { DATA_SCOPE_LABELS } from '@/shared/types/permissions';
 import { baseOption, categoryAxis, fullMoney, SERIES, TEXT_PRIMARY, valueAxis } from '@/shared/utils/chart-theme';
+import { withBasePath } from '@/shared/utils/base-path';
 
 const { me, canOption } = useMe();
 const filters = reactive({ year: undefined as number | undefined, metric: 'accepted' as DashboardMetric, departmentId: undefined as string | undefined, ownerUserId: undefined as string | undefined });
@@ -309,7 +310,7 @@ const growthText = computed(() => {
             >
               <template #cell="{ columnId, record }">
                 <template v-if="columnId === 'projectName'">
-                  <a :href="`/projects/detail?id=${record.projectId}`">{{ record.projectName }}</a>
+                  <a :href="withBasePath(`/projects/detail?id=${record.projectId}`)">{{ record.projectName }}</a>
                   <div class="muted">{{ record.clientName }}</div>
                 </template>
                 <template v-else-if="columnId === 'dueDate'">
@@ -336,7 +337,7 @@ const growthText = computed(() => {
               <template #cell="{ columnId, record }">
                 <template v-if="columnId === 'subject'">{{ record.subject }}<div class="muted">{{ record.warrantyNo }}</div></template>
                 <template v-else-if="columnId === 'projectName'">
-                  <a :href="`/projects/detail?id=${record.projectId}`">{{ record.projectName }}</a>
+                  <a :href="withBasePath(`/projects/detail?id=${record.projectId}`)">{{ record.projectName }}</a>
                   <div class="muted">{{ record.clientName }}</div>
                 </template>
               </template>

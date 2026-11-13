@@ -6,6 +6,7 @@
  */
 import { HubConnectionBuilder, LogLevel, type HubConnection } from '@microsoft/signalr';
 import { apiRequest, ensureFreshAccessToken, redirectToLogin } from '@/shared/api/http-client';
+import { withBasePath } from '@/shared/utils/base-path';
 
 /** 連線狀態：online 上線、idle 閒置（一段時間沒操作）、offline 離線。 */
 export type PresenceState = 'online' | 'idle' | 'offline';
@@ -184,7 +185,7 @@ let connection: HubConnection | null = null;
  */
 export function officeConnection(): HubConnection {
   connection ??= new HubConnectionBuilder()
-    .withUrl('/api/hubs/office', {
+    .withUrl(withBasePath('/api/hubs/office'), {
       accessTokenFactory: async () => {
         const token = await ensureFreshAccessToken();
         if (!token) {

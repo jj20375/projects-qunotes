@@ -21,6 +21,7 @@ import { DATA_SCOPE_LABELS, meetsRequirement } from '@/shared/types/permissions'
 import NotificationBell from '@/app/components/NotificationBell.vue';
 import { ME_KEY } from '@/app/composables/use-me';
 import { startPresence } from '@/app/composables/use-presence';
+import { withBasePath } from '@/shared/utils/base-path';
 
 dayjs.locale('zh-tw');
 
@@ -117,7 +118,7 @@ async function switchScope(value: unknown) {
   switching.value = true;
   try {
     await selectScopeApi(target.scopeKind, target.companyId);
-    window.location.assign('/');
+    window.location.assign(withBasePath('/'));
   } catch (error) {
     message.error((error as Error).message);
     switching.value = false;
@@ -126,12 +127,12 @@ async function switchScope(value: unknown) {
 
 /** 後台是多頁靜態站，選單直接換頁；群組節點的 key 是權限代碼，不會觸發 click。 */
 function navigate({ key }: { key: string | number }) {
-  window.location.assign(String(key));
+  window.location.assign(withBasePath(String(key)));
 }
 
 async function logout() {
   await logoutApi();
-  window.location.assign('/login');
+  window.location.assign(withBasePath('/login'));
 }
 </script>
 
@@ -199,7 +200,7 @@ async function logout() {
         />
         <a-layout-content class="shell-content">
           <a-result v-if="forbidden" status="403" title="沒有權限" sub-title="目前的工作範圍或權限無法使用這個功能。">
-            <template #extra><a-button type="primary" href="/">回首頁</a-button></template>
+            <template #extra><a-button type="primary" :href="withBasePath('/')">回首頁</a-button></template>
           </a-result>
           <slot v-else :me="me" />
         </a-layout-content>

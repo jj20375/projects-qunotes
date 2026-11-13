@@ -7,6 +7,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import zhTW from 'ant-design-vue/es/locale/zh_TW';
 import { getCaptchaApi, loginApi } from '@/shared/services/auth-service';
+import { withBasePath } from '@/shared/utils/base-path';
 
 const form = reactive({ account: '', password: '', captchaCode: '' });
 const captcha = ref<{ enabled: boolean; captchaId?: string; image?: string }>({ enabled: false });
@@ -32,7 +33,7 @@ async function submit() {
   submitting.value = true;
   try {
     await loginApi({ account: form.account, password: form.password, captchaId: captcha.value.captchaId, captchaCode: form.captchaCode });
-    window.location.assign(safeRedirect());
+    window.location.assign(withBasePath(safeRedirect()));
   } catch (exception) {
     error.value = (exception as Error).message;
     await loadCaptcha();

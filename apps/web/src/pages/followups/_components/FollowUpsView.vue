@@ -21,6 +21,7 @@ import {
 } from '@/shared/services/followup-service';
 import { dataColumns, type SortingState } from '@/shared/table/data-table';
 import { DATA_SCOPE_LABELS } from '@/shared/types/permissions';
+import { withBasePath } from '@/shared/utils/base-path';
 
 const { me } = useMe();
 const filters = reactive({
@@ -156,7 +157,7 @@ const columns = [
           <template v-else-if="columnId === 'createdAt'">{{ dayjs(record.createdAt).format('YYYY-MM-DD HH:mm') }}</template>
           <template v-else-if="columnId === 'type'">{{ followUpTypeLabel(record.type) }}</template>
           <template v-else-if="columnId === 'project'">
-            <a v-if="record.project" :href="`/projects/detail?id=${record.project.id}&tab=followups`">{{ record.project.projectNo }} {{ record.project.name }}</a>
+            <a v-if="record.project" :href="withBasePath(`/projects/detail?id=${record.project.id}&tab=followups`)">{{ record.project.projectNo }} {{ record.project.name }}</a>
             <span v-else class="muted">—</span>
           </template>
           <template v-else-if="columnId === 'nextFollowUpOn'">

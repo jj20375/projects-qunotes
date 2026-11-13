@@ -4,13 +4,14 @@
  * 對應的素材載入失敗時改用 office-textures.ts 的程式繪製版本。
  * 角色由 office-avatars.ts 依 OFFICE_AVATAR_LAYERS 把多層 frame 疊成單張貼圖。
  */
+import { withBasePath } from '@/shared/utils/base-path';
 
 /** spritesheet 設定（16×16 圖塊、圖塊之間 1px 間隔）。 */
 export const OFFICE_SHEETS = {
   /** 專案自製的辦公室圖塊（授權見該資料夾的 License.txt）：16×16 圖塊、1px 間隔，共 10 欄 5 列（frame = 列 × 10 + 欄）。 */
-  tileset: { key: 'office-tileset', url: '/office/office-tileset/office_tileset.png' },
+  tileset: { key: 'office-tileset', url: withBasePath('/office/office-tileset/office_tileset.png') },
   /** Roguelike Characters：16×16 圖塊、1px 間隔，共 54 欄 12 列（frame = 列 × 54 + 欄）；只有正面圖，且身體、衣服、髮型各自是獨立圖層。 */
-  characters: { key: 'kenney-characters', url: '/office/kenney/roguelike-characters/roguelikeChar_transparent.png' },
+  characters: { key: 'kenney-characters', url: withBasePath('/office/kenney/roguelike-characters/roguelikeChar_transparent.png') },
 } as const;
 
 /**

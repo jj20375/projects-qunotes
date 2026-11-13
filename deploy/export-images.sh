@@ -44,22 +44,15 @@ fi
 built_images=(
   "quote-platform-api:${image_tag}"
   "quote-platform-file-server:${image_tag}"
-  "quote-platform-web:${image_tag}"
+  "quote-platform-web-build:${image_tag}"
 )
+# web 直接用官方 nginx，靜態檔由目標機的 web-build 依 APP_BASE_PATH 產生，所以這裡不含建置好的前端。
 # alpine 是 backup.sh／restore.sh 打包 MinIO volume 的臨時容器，漏掉會讓目標機第一次備份就失敗。
-pulled_images=("minio/minio:${minio_tag}" "alpine:latest")
+pulled_images=("minio/minio:${minio_tag}" "alpine:latest" "nginx:1.27-alpine")
 
 if [[ "$skip_build" == false ]]; then
   echo "[INFO] 建置應用程式映像（${TARGET_PLATFORM}）…"
-  # --provenance=false／--sbom=false：預設附掛的 attestation 會讓 docker save 產出
-  # manifest list，部分 docker load 的處理不一致；離線交付要最單純的單平台映像。
-  build_one() {
-    DOCKER_BUILDKIT=1 docker buildx build --platform "$TARGET_PLATFORM" \
-      --provenance=false --sbom=false --load -f "$1" -t "$2" .
-  }
-  build_one apps/api/QuotePlatform.Api/Dockerfile "quote-platform-api:${image_tag}"
-  build_one file-server/Dockerfile "quote-platform-file-server:${image_tag}"
-  build_one apps/web/Dockerfile "quote-platform-web:${image_tag}"
+  quote_build_images "$image_tag" "$TARGET_PLATFORM"
 
   echo "[INFO] 取得基礎映像（${TARGET_PLATFORM}）…"
   # MinIO 官方已不再公開發布映像：Docker Hub 的 minio/minio 倉庫已不存在，Quay 的舊 tag 也會回 401。
@@ -78,6 +71,7 @@ if [[ "$skip_build" == false ]]; then
     exit 1
   fi
   docker pull --platform "$TARGET_PLATFORM" alpine:latest
+  docker pull --platform "$TARGET_PLATFORM" nginx:1.27-alpine
 fi
 
 echo "[INFO] 驗證映像架構…"

@@ -1,0 +1,37 @@
+# 只供本機／測試機驗證子路徑部署：模擬 demo 機 IIS Application 的行為——
+# 把 APP_BASE_PATH 這段前綴剝掉，再轉給 web 容器，並帶上前置代理該帶的標頭。
+# 官方 entrypoint 只代換 APP_BASE_PATH（NGINX_ENVSUBST_FILTER），其他 $ 開頭的都是 nginx 變數。
+
+map $http_upgrade $dev_proxy_connection {
+    default upgrade;
+    '' close;
+}
+
+server {
+    listen 80;
+    server_name _;
+    client_max_body_size 25m;
+    absolute_redirect off;
+
+    # 少打結尾斜線時補上，對應 web.config 的「補結尾斜線」規則。
+    location = ${APP_BASE_PATH} {
+        return 301 ${APP_BASE_PATH}/;
+    }
+
+    # proxy_pass 結尾的 / 會把 location 前綴換掉，等同 IIS 在進入 Application 前剝掉自己的路徑。
+    location ${APP_BASE_PATH}/ {
+        proxy_pass http://web:80/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $dev_proxy_connection;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_request_buffering off;
+        proxy_read_timeout 330s;
+    }
+
+    location / {
+        return 404 "dev-proxy: 只轉發 ${APP_BASE_PATH}/ 底下的路徑\n";
+    }
+}

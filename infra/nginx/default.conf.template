@@ -22,6 +22,9 @@ server {
     server_name _;
     root /usr/share/nginx/html;
     client_max_body_size 20m;
+    # 掛在子路徑下時，前置代理（IIS）已經剝掉前綴；nginx 自己產生的轉址若寫成絕對網址，
+    # 會帶著容器內的 host:port 而且少了前綴。改成相對路徑，至少不會把使用者帶到別的主機。
+    absolute_redirect off;
 
     # 上游用變數＋Docker 內建 DNS：寫死主機名稱時 nginx 只在啟動時解析一次，
     # api／file-server 容器重建換了 IP 後會一直轉到舊 IP（502），直到 web 也重啟。
@@ -78,9 +81,11 @@ server {
         proxy_set_header X-Forwarded-Proto $forwarded_proto;
     }
 
-    # Astro static 以 /admin/users/index.html 形式輸出頁面。
+    # Astro static 以 /admin/users/index.html 形式輸出頁面，站內連結都不帶結尾斜線（/projects/detail?id=…）。
+    # 直接回傳資料夾裡的 index.html，不能寫 $uri/：那會觸發 nginx 的「目錄補斜線」301，而轉址目標只有剝掉前綴後的
+    # 路徑（/projects/detail/），掛在子路徑下時使用者會被帶離 /quote-platform/app，每次換頁都失敗。
     location / {
-        try_files $uri $uri/ $uri.html =404;
+        try_files $uri $uri/index.html $uri.html =404;
     }
 
     location /_astro/ {

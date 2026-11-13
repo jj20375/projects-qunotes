@@ -8,6 +8,7 @@
  * file-server 驗證並存檔後回呼 API；完成前附件不會出現在列表。
  */
 import { apiRequest } from '@/shared/api/http-client';
+import { withBasePath } from '@/shared/utils/base-path';
 
 /**
  * 訂單明細資料結構
@@ -482,7 +483,8 @@ export interface UploadSession {
 export function putToFileServer(session: UploadSession, file: File, onProgress: (percent: number) => void = () => {}): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('PUT', session.uploadUrl);
+    // uploadUrl 由 API 產生，是不含部署前綴的 /files/uploads/...（API 不知道外層掛在哪個路徑）。
+    xhr.open('PUT', withBasePath(session.uploadUrl));
     xhr.setRequestHeader('authorization', `Bearer ${session.token}`);
     xhr.upload.onprogress = (event) => event.lengthComputable && onProgress(Math.round((event.loaded / event.total) * 100));
     xhr.onload = () => {

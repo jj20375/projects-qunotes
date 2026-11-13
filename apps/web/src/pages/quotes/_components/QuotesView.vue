@@ -12,6 +12,7 @@ import { searchQuotesApi, type QuoteRow, type QuoteSearchQuery } from '@/shared/
 import { dataColumns } from '@/shared/table/data-table';
 import { formatMoney, QUOTE_STATUSES, quoteNumber, quoteStatusColor, quoteStatusLabel } from '@/shared/types/business';
 import QuoteImportModal from './QuoteImportModal.vue';
+import { withBasePath } from '@/shared/utils/base-path';
 
 const { canOption } = useMe();
 const filters = reactive({ keyword: '', status: [] as string[], range: [] as Dayjs[], amountMin: null as number | null, amountMax: null as number | null, latestOnly: true });
@@ -69,7 +70,7 @@ function onTableChange(change: TableChange) {
       </a-space>
       <a-space>
         <a-button v-if="canImport" @click="importOpen = true">匯入報價</a-button>
-        <a-tooltip title="報價單從專案頁新增"><a-button type="primary" href="/projects">到專案新增報價</a-button></a-tooltip>
+        <a-tooltip title="報價單從專案頁新增"><a-button type="primary" :href="withBasePath('/projects')">到專案新增報價</a-button></a-tooltip>
       </a-space>
     </div>
     <DataTable
@@ -83,10 +84,10 @@ function onTableChange(change: TableChange) {
     >
       <template #cell="{ columnId, record }">
         <template v-if="columnId === 'quoteNo'">
-          <a :href="`/quotes/edit?id=${record.id}`">{{ quoteNumber(record) }}</a>
+          <a :href="withBasePath(`/quotes/edit?id=${record.id}`)">{{ quoteNumber(record) }}</a>
         </template>
         <template v-else-if="columnId === 'projectName'">
-          <a :href="`/projects/detail?id=${record.projectId}`">{{ record.projectName }}</a>
+          <a :href="withBasePath(`/projects/detail?id=${record.projectId}`)">{{ record.projectName }}</a>
           <div class="muted">{{ record.projectNo }}{{ record.title && record.title !== record.projectName ? ` · ${record.title}` : '' }}</div>
         </template>
         <template v-else-if="columnId === 'status'">

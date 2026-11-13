@@ -8,6 +8,7 @@
  *   第一批請求全部先收到 401 才重試（功能沒問題，但 Network 與 Console 會出現一串 401）。
  */
 import type { AuthResponse } from '@/shared/types/auth';
+import { stripBasePath, withBasePath } from '@/shared/utils/base-path';
 
 const ACCESS_TOKEN_KEY = 'qp_access_token';
 
@@ -50,7 +51,7 @@ let refreshing: Promise<boolean> | null = null;
 export function refreshAccessToken(): Promise<boolean> {
   refreshing ??= (async () => {
     try {
-      const response = await fetch('/api/auth/refresh', { method: 'POST', credentials: 'same-origin' });
+      const response = await fetch(withBasePath('/api/auth/refresh'), { method: 'POST', credentials: 'same-origin' });
       if (!response.ok) {
         storeAccessToken(null);
         return false;
@@ -67,8 +68,9 @@ export function refreshAccessToken(): Promise<boolean> {
 }
 
 export function redirectToLogin(): void {
-  const here = `${window.location.pathname}${window.location.search}`;
-  window.location.assign(here === '/' || here.startsWith('/login') ? '/login' : `/login?redirect=${encodeURIComponent(here)}`);
+  // redirect 參數存邏輯路徑（不含部署前綴），登入頁導回時再加前綴，兩邊才不會重複疊加。
+  const here = `${stripBasePath(window.location.pathname)}${window.location.search}`;
+  window.location.assign(withBasePath(here === '/' || here.startsWith('/login') ? '/login' : `/login?redirect=${encodeURIComponent(here)}`));
 }
 
 function buildUrl(path: string, query?: ApiRequestOptions['query']): string {
@@ -78,7 +80,7 @@ function buildUrl(path: string, query?: ApiRequestOptions['query']): string {
     else if (value !== undefined && value !== null && value !== '') params.set(key, String(value));
   });
   const text = params.toString();
-  return text ? `${path}?${text}` : path;
+  return withBasePath(text ? `${path}?${text}` : path);
 }
 
 /** JWT 是否已過期或 15 秒內就會過期；讀不出內容的 token 也視為無效。 */

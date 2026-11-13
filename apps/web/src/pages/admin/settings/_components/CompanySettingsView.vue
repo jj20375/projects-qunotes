@@ -11,6 +11,7 @@ import { useQuery, useQueryClient } from '@tanstack/vue-query';
 import TermsEditor from '@/app/components/TermsEditor.vue';
 import { useMe } from '@/app/composables/use-me';
 import { getCompanySettingsApi, previewNumberPattern, updateCompanySettingsApi, uploadCompanyLogoApi } from '@/shared/services/dashboard-service';
+import { withBasePath } from '@/shared/utils/base-path';
 
 const { can } = useMe();
 const editable = computed(() => can('company.settings', 'update'));
@@ -134,7 +135,7 @@ async function removeLogo() {
           <a-col :xs="24" :md="10">
             <div class="logo-label">Logo</div>
             <div class="logo-box">
-              <img v-if="settings.data.value?.company.logoUrl" :src="settings.data.value.company.logoUrl" alt="目前的公司 Logo" />
+              <img v-if="settings.data.value?.company.logoUrl" :src="withBasePath(settings.data.value.company.logoUrl)" alt="目前的公司 Logo" />
               <span v-else class="hint">尚未設定 Logo</span>
             </div>
             <a-space v-if="editable" style="margin-top: 8px">

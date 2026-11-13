@@ -438,7 +438,7 @@ Mac 本機直接跑 API 時改成 `Server=127.0.0.1;Port=9529;…`，設定放�
 
 ```
 專案報價管理系統/
-├─ docker-compose.yml             api、file-server、minio、web（nginx）；不含 mariadb
+├─ docker-compose.yml             api、file-server、minio、web（nginx）、web-build（前端建置工具）、dev-proxy；不含 mariadb
 ├─ docker-compose.shared-db.yml   overlay：api 加入外部 network；volume 改 bind 到 ${DATA_ROOT}/quote/
 └─ deploy/
    ├─ .env.<環境>.example         development／demo／production 的設定範本；實際檔案 deploy/.env.<環境> 不進版控
@@ -446,10 +446,13 @@ Mac 本機直接跑 API 時改成 `Server=127.0.0.1;Port=9529;…`，設定放�
    ├─ export-images.sh            開發機打包 linux/amd64 映像，供 demo／正式機離線載入
    ├─ dc.sh / compose-lib.sh      docker compose 包裝，固定帶上 shared-db overlay 與 deploy/.env
    ├─ ensure-shared-db.sh         在共用 MariaDB 建立 quote_platform 與 quote_app
-   └─ backup.sh / restore.sh      只處理 quote_ 開頭的資料庫與本系統的 MinIO，備份放 backups/
+   ├─ backup.sh / restore.sh      只處理 quote_ 開頭的資料庫與本系統的 MinIO，備份放 backups/
+   └─ iis/web.config              demo 機 IIS Application（/quote-platform/app）的反向代理設定
 ```
 
-三個環境用同一套腳本，差異只在 `deploy/.env.<環境>`（`DEPLOY_MODE`、`SHARED_DB_*`、`DATA_ROOT`、`REFRESH_COOKIE_SECURE`、`WEB_BIND`、密碼與金鑰）。操作流程見 [deploy/DEPLOY-FLOW.md](../deploy/DEPLOY-FLOW.md)。
+三個環境用同一套腳本，差異只在 `deploy/.env.<環境>`（`DEPLOY_MODE`、`SHARED_DB_*`、`DATA_ROOT`、`REFRESH_COOKIE_SECURE`、`APP_BASE_PATH`、`WEB_BIND`、密碼與金鑰）。
+
+web 容器是官方 nginx，不含前端檔案：`deploy.sh` 每次部署先用 `quote-platform-web-build`（Node、相依套件與原始碼）依 `APP_BASE_PATH` 產生靜態檔到 `web-dist` volume，再啟動 nginx 掛載它。前綴因此在目標機決定，同一份映像可用在任何環境。操作流程見 [deploy/DEPLOY-FLOW.md](../deploy/DEPLOY-FLOW.md)。
 
 `docker-compose.shared-db.yml` 的重點（照抄美達特的寫法）：
 
@@ -494,6 +497,17 @@ FLUSH PRIVILEGES;
 ### 9.5 使用者真實 IP
 
 API 的 `ForwardedHeaders` 只信任一跳（Program.cs），所以由 web 容器的 nginx 負責還原使用者 IP：`infra/nginx/default.conf.template` 以 realip 模組，只在連線來源屬於 `TRUSTED_PROXY_CIDR` 時從 `X-Forwarded-For` 取出使用者 IP，往 API 只送一筆 `X-Forwarded-For`；`X-Forwarded-Proto` 也只採信信任來源。`TRUSTED_PROXY_CIDR` 由各環境設定檔決定（正式機 `172.16.0.0/12`，demo／開發 `127.0.0.1/32`），在容器啟動時由 nginx 官方 entrypoint 代入。nginx 上游用變數＋`resolver 127.0.0.11`，api／file-server 重建換 IP 後不必重啟 web。細節見 [deploy/DEPLOY-FLOW.md](../deploy/DEPLOY-FLOW.md)。
+
+### 9.6 掛在其他網站的子路徑下（APP_BASE_PATH）
+
+demo 機只拿得到既有網域底下的一個路徑（IIS Application `https://<網域>/quote-platform/app/`），做法比照美達特的麻醉媒合 APP：由一個設定值 `APP_BASE_PATH` 決定前綴，留空就是根目錄部署，程式走同一條路徑。
+
+- **前置代理剝掉前綴**：IIS（`deploy/iis/web.config`）在轉發前移除 `/quote-platform/app`，所以 VM 裡的 nginx、API、file-server 看到的路徑永遠不含前綴，路由與 nginx 設定都不必為前綴調整。
+- **前端**：`APP_BASE_PATH` 以 `QUOTE_BASE_PATH` 傳給 Astro 的 `base`，`_astro` 資源自動帶前綴；其餘交給瀏覽器的網址（API 請求、下載／上傳、SignalR、`location.assign`、`href`、public 圖檔）一律經 `src/shared/utils/base-path.ts` 的 `withBasePath()`。程式裡只寫邏輯路徑，拿 `location.pathname` 比對時先 `stripBasePath()`。新增連結或直接呼叫 `fetch` 時必須沿用這兩個函式。
+- **API**：只有 refresh cookie 的 Path 要帶前綴（`Quote__PublicBasePath` → `/quote-platform/app/api/auth`），否則瀏覽器不會把 cookie 送回來。API 回傳的檔案網址（`/files/...`）維持不含前綴，由前端加上，因為同一組設定也用來組 API 向 file-server 取檔的內部網址。
+- **nginx**：頁面以 `try_files $uri $uri/index.html` 直接回傳，不用 `$uri/`；後者會觸發「目錄補斜線」301，轉址目標只有剝掉前綴後的路徑，掛在子路徑下時每次換頁都會離開 `/quote-platform/app`。
+
+本機驗證不需要 IIS：`APP_BASE_PATH` 設好後部署，再啟動 compose 的 `dev-proxy`（模擬 IIS 剝前綴，`127.0.0.1:8097`）。
 
 ## 10. 本機開發與驗證
 

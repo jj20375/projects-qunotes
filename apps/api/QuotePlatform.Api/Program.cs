@@ -75,6 +75,10 @@ if (Encoding.UTF8.GetByteCount(quoteOptions.JwtKey) < 32) throw new InvalidOpera
 // 檔案 token 與 file-server 共用；缺少時附件功能整個無法使用，因此啟動即失敗而不是等到上傳才發現。
 if (Encoding.UTF8.GetByteCount(quoteOptions.FileTokenKey) < 32) throw new InvalidOperationException("Quote__FileTokenKey 未設定或長度不足 32 bytes（需與 file-server 的 FILE_TOKEN_KEY 相同）。");
 if (quoteOptions.FileCallbackSecret.Length < 16) throw new InvalidOperationException("Quote__FileCallbackSecret 未設定或少於 16 字元（需與 file-server 的 FILE_CALLBACK_SECRET 相同）。");
+// 前綴會原樣寫進 Set-Cookie 的 Path；含分號、空白等字元時瀏覽器會整個忽略 cookie，表現成「登入後一換頁就被登出」，很難從症狀查回來。
+var publicBasePath = quoteOptions.PublicBasePath.Trim().Trim('/');
+if (publicBasePath.Length > 0 && !System.Text.RegularExpressions.Regex.IsMatch(publicBasePath, "^[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*$"))
+    throw new InvalidOperationException($"Quote__PublicBasePath 格式錯誤：{quoteOptions.PublicBasePath}（例如 /quote-platform/app，只能有英數字與 . _ ~ -）。");
 // 不提供預設連線字串：避免沒帶環境變數時誤連 Mac 上 3306 的 metat-vps-copy-db。
 var connectionString = builder.Configuration.GetConnectionString("Quote");
 if (string.IsNullOrWhiteSpace(connectionString)) throw new InvalidOperationException("ConnectionStrings__Quote 未設定。");

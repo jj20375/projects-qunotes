@@ -6,6 +6,7 @@
  */
 import { ref, watch } from 'vue';
 import { message } from 'ant-design-vue';
+import { withBasePath } from '@/shared/utils/base-path';
 import dayjs from 'dayjs';
 import {
   ACCEPTED_FILE_TYPES,
@@ -67,7 +68,7 @@ const previewable = (row: AttachmentRow) => row.contentType === 'application/pdf
 async function open(row: AttachmentRow) {
   const tab = window.open('about:blank', '_blank');
   try {
-    const { url } = await getDownloadUrlApi(row.id, previewable(row));
+    const url = withBasePath((await getDownloadUrlApi(row.id, previewable(row))).url);
     if (tab) tab.location.href = url;
     else window.location.assign(url);
   } catch (error) {

@@ -30,6 +30,8 @@ services:
       ConnectionStrings__Quote: Server=mariadb;Port=3306;Database=quote_platform;User=quote_app;Password=${DB_PASSWORD:?請在 deploy/.env 設定 DB_PASSWORD}
       Quote__JwtKey: ${JWT_KEY:?請在 deploy/.env 設定 JWT_KEY}
       Quote__RefreshCookieSecure: ${REFRESH_COOKIE_SECURE:-true}
+      # 掛在子路徑下時，refresh cookie 的 Path 要帶前綴；與 web-build 的 QUOTE_BASE_PATH 同一個來源。
+      Quote__PublicBasePath: ${APP_BASE_PATH:-}
       Quote__LoginCaptchaEnabled: "true"
       # 預設不自動套用 schema：重啟容器不該悄悄改資料庫。需要時用 deploy.sh --migrate 單次開啟。
       Quote__MigrateOnStart: ${MIGRATE_ON_START:-false}
@@ -98,19 +100,37 @@ services:
           cpus: "0.5"
           memory: 512M
 
-  web:
+  # 前端建置工具：deploy.sh 每次部署執行一次，依 APP_BASE_PATH 產生靜態檔到 web-dist 後結束。
+  # 放在 tools profile，`up` 不會啟動它；前綴在目標機決定，同一份映像可用在任何環境。
+  web-build:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
-    image: quote-platform-web:${IMAGE_TAG:-latest}
+    image: quote-platform-web-build:${IMAGE_TAG:-latest}
+    profiles: ["tools"]
+    logging: *default-logging
+    environment:
+      # 必須與 api 的 Quote__PublicBasePath 是同一個值，所以兩邊都只讀 APP_BASE_PATH。
+      QUOTE_BASE_PATH: ${APP_BASE_PATH:-}
+    volumes:
+      - web-dist:/out
+
+  web:
+    image: nginx:1.27-alpine
     restart: unless-stopped
     logging: *default-logging
     depends_on:
       - api
       - file-server
     environment:
+      # 官方 entrypoint 把 templates/*.template 代入環境變數後輸出到 conf.d/；只允許代換這一個，
+      # 其他 $ 開頭的都是 nginx 自己的變數。
+      NGINX_ENVSUBST_FILTER: TRUSTED_PROXY_CIDR
       # 只有從這個網段連進來的請求，才採信它帶的 X-Forwarded-For 作為使用者 IP（見 infra/nginx/default.conf.template）。
       TRUSTED_PROXY_CIDR: ${TRUSTED_PROXY_CIDR:-127.0.0.1/32}
+    volumes:
+      - ./infra/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - web-dist:/usr/share/nginx/html:ro
     ports:
       - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-8096}:80"
     deploy:
@@ -119,7 +139,27 @@ services:
           cpus: "0.25"
           memory: 128M
 
+  # 只供本機／測試機驗證子路徑部署：模擬 IIS 把 APP_BASE_PATH 剝掉後轉給 web，不必真的有 IIS 也能完整瀏覽。
+  # APP_BASE_PATH 留空時不要啟動（location 會是空字串，nginx 起不來；沒有前綴直接開 WEB_PORT 即可）。
+  #   ./deploy/dc.sh --profile dev-proxy up -d dev-proxy
+  #   開啟 http://127.0.0.1:${DEV_PROXY_PORT}${APP_BASE_PATH}/
+  dev-proxy:
+    image: nginx:1.27-alpine
+    profiles: ["dev-proxy"]
+    logging: *default-logging
+    depends_on:
+      - web
+    environment:
+      NGINX_ENVSUBST_FILTER: APP_BASE_PATH
+      APP_BASE_PATH: ${APP_BASE_PATH:-}
+    volumes:
+      - ./infra/nginx/dev-outer-proxy.conf.template:/etc/nginx/templates/default.conf.template:ro
+    ports:
+      - "127.0.0.1:${DEV_PROXY_PORT:-8097}:80"
+
 volumes:
   minio-data:
   # 上傳中的暫存檔，存完即刪，不需備份。
   file-tmp:
+  # web-build 產生的前端靜態檔；每次部署重新產生，不需備份。
+  web-dist:

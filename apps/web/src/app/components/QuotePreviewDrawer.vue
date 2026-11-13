@@ -14,6 +14,7 @@ import { getQuoteApi, type QuoteItem } from '@/shared/services/quote-service';
 import { formatMoney, quoteNumber, quoteStatusColor, quoteStatusLabel } from '@/shared/types/business';
 import { downloadFile } from '@/shared/utils/download';
 import { useMe } from '@/app/composables/use-me';
+import { withBasePath } from '@/shared/utils/base-path';
 
 const props = defineProps<{ open: boolean; quoteId?: string | null }>();
 const emit = defineEmits<{ close: [] }>();
@@ -73,7 +74,7 @@ async function downloadPdf() {
           </div>
           <a-space>
             <a-button v-if="canOption('quotes', 'export_pdf')" @click="downloadPdf">下載 PDF</a-button>
-            <a-button :href="`/quotes/edit?id=${q.id}`" target="_blank">開啟報價單</a-button>
+            <a-button :href="withBasePath(`/quotes/edit?id=${q.id}`)" target="_blank">開啟報價單</a-button>
           </a-space>
         </div>
 

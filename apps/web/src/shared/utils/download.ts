@@ -7,6 +7,7 @@
  * 支援 RFC 5987 之 Content-Disposition 中文檔名解析。
  */
 import { ApiError, readAccessToken, refreshAccessToken } from '@/shared/api/http-client';
+import { withBasePath } from '@/shared/utils/base-path';
 
 /**
  * 從 HTTP Content-Disposition 回應標頭解析檔案名稱
@@ -29,7 +30,7 @@ function fileNameFrom(disposition: string | null, fallback: string): string {
  * @returns Promise<void>
  */
 export async function downloadFile(path: string, fallbackName: string): Promise<void> {
-  const send = () => fetch(path, { headers: { authorization: `Bearer ${readAccessToken() ?? ''}` }, credentials: 'same-origin' });
+  const send = () => fetch(withBasePath(path), { headers: { authorization: `Bearer ${readAccessToken() ?? ''}` }, credentials: 'same-origin' });
   let response = await send();
   if (response.status === 401 && (await refreshAccessToken())) response = await send();
   if (!response.ok) {
@@ -54,7 +55,7 @@ export async function downloadFile(path: string, fallbackName: string): Promise<
  * @returns 傳回伺服器回傳之 JSON 反序列化物件
  */
 export async function uploadFile<T>(path: string, form: FormData): Promise<T> {
-  const send = () => fetch(path, { method: 'POST', body: form, headers: { authorization: `Bearer ${readAccessToken() ?? ''}` }, credentials: 'same-origin' });
+  const send = () => fetch(withBasePath(path), { method: 'POST', body: form, headers: { authorization: `Bearer ${readAccessToken() ?? ''}` }, credentials: 'same-origin' });
   let response = await send();
   if (response.status === 401 && (await refreshAccessToken())) response = await send();
   const data = response.headers.get('content-type')?.includes('json') ? await response.json() : undefined;

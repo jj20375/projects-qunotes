@@ -17,6 +17,7 @@ import { searchProjectsApi, type ProjectRow, type ProjectSearchQuery } from '@/s
 import { dataColumns, type SortingState } from '@/shared/table/data-table';
 import { formatMoney, PROJECT_STATUSES, projectStatusColor, projectStatusLabel } from '@/shared/types/business';
 import ProjectFormModal from './ProjectFormModal.vue';
+import { withBasePath } from '@/shared/utils/base-path';
 
 const { can } = useMe();
 const canFollowUps = can('followups');
@@ -110,7 +111,7 @@ const columns = [
 
 const formOpen = ref(false);
 function onCreated(id: string) {
-  window.location.assign(`/projects/detail?id=${id}`);
+  window.location.assign(withBasePath(`/projects/detail?id=${id}`));
 }
 </script>
 
@@ -189,10 +190,10 @@ function onCreated(id: string) {
       >
         <template #cell="{ columnId, record }">
           <template v-if="columnId === 'projectNo'">
-            <a :href="`/projects/detail?id=${record.id}`">{{ record.projectNo }}</a>
+            <a :href="withBasePath(`/projects/detail?id=${record.id}`)">{{ record.projectNo }}</a>
           </template>
           <template v-else-if="columnId === 'name'">
-            <a :href="`/projects/detail?id=${record.id}`">{{ record.name }}</a>
+            <a :href="withBasePath(`/projects/detail?id=${record.id}`)">{{ record.name }}</a>
           </template>
           <template v-else-if="columnId === 'status'">
             <a-tag :color="projectStatusColor(record.status)">{{ projectStatusLabel(record.status) }}</a-tag>

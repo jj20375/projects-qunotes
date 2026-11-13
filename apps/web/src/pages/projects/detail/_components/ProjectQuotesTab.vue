@@ -12,6 +12,7 @@ import type { ProjectDetail } from '@/shared/services/business-service';
 import { listProjectQuotesApi, type QuoteRow } from '@/shared/services/quote-service';
 import { formatMoney, quoteNumber, quoteStatusColor, quoteStatusLabel } from '@/shared/types/business';
 import QuoteImportModal from '../../../quotes/_components/QuoteImportModal.vue';
+import { withBasePath } from '@/shared/utils/base-path';
 
 const props = defineProps<{ project: ProjectDetail }>();
 const { can, canOption } = useMe();
@@ -59,7 +60,7 @@ const columns = [
   <div class="toolbar">
     <a-space>
       <a-button v-if="canImport" @click="importOpen = true">匯入報價</a-button>
-      <a-button v-if="canCreate" type="primary" :href="`/quotes/edit?projectId=${project.id}`">新增報價單</a-button>
+      <a-button v-if="canCreate" type="primary" :href="withBasePath(`/quotes/edit?projectId=${project.id}`)">新增報價單</a-button>
     </a-space>
   </div>
   <DataTable
@@ -75,7 +76,7 @@ const columns = [
   >
     <template #cell="{ columnId, record }">
       <template v-if="columnId === 'quoteNo'">
-        <a :href="`/quotes/edit?id=${record.id}`">{{ quoteNumber(record) }}</a>
+        <a :href="withBasePath(`/quotes/edit?id=${record.id}`)">{{ quoteNumber(record) }}</a>
       </template>
       <template v-else-if="columnId === 'status'">
         <a-tag :color="quoteStatusColor(record.status)">{{ quoteStatusLabel(record.status) }}</a-tag>

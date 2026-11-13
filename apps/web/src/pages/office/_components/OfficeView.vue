@@ -30,6 +30,7 @@ import { AVATAR_COLORS } from './office-textures';
 import { chatRecipients, zoneCenter } from './office-grid';
 import type { OfficeScene } from './office-scene';
 import OfficeSidePanel from './OfficeSidePanel.vue';
+import { withBasePath } from '@/shared/utils/base-path';
 
 const { me, can } = useMe();
 const meId = me.value!.scope.membershipId!;
@@ -100,7 +101,7 @@ onMounted(async () => {
   if (me.value!.scope.isImpersonating) return;
   const params = new URLSearchParams(window.location.search);
   const answer = params.get('answer');
-  if (params.has('dept') || answer) history.replaceState(null, '', '/office');
+  if (params.has('dept') || answer) history.replaceState(null, '', withBasePath('/office'));
   rooms.value = await listOfficeRoomsApi();
   const wanted = params.get('dept') ?? me.value!.scope.departmentId ?? rooms.value[0]?.departmentId;
   const { createOfficeGame } = await import('./office-scene');

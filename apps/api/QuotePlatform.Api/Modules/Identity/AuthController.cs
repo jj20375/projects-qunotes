@@ -16,7 +16,7 @@ namespace QuotePlatform.Api.Modules.Identity;
 [Route("api/auth")]
 public sealed class AuthController(IdentityService identity, LoginCaptchaService captcha, IOptions<QuoteOptions> options) : ScopedControllerBase
 {
-    /// <summary>Refresh token cookie 名稱；Path 限縮在 /api/auth，其他業務 API 請求不攜帶。</summary>
+    /// <summary>Refresh token cookie 名稱；Path 限縮在（部署前綴）/api/auth，其他業務 API 請求不攜帶。</summary>
     public const string RefreshCookieName = "qp_rt";
 
     /// <summary>
@@ -126,7 +126,7 @@ public sealed class AuthController(IdentityService identity, LoginCaptchaService
         HttpOnly = true,
         Secure = options.Value.RefreshCookieSecure,
         SameSite = SameSiteMode.Strict,
-        Path = "/api/auth",
+        Path = options.Value.RefreshCookiePath,
         Expires = expires,
     };
 

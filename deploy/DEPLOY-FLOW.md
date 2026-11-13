@@ -14,7 +14,7 @@
 
 | 指令 | 說明 |
 |---|---|
-| `./deploy/deploy.sh --environment=<環境>` | 部署（選設定檔 → 準備映像 → 建資料庫帳號 → 啟動 → 等 API 就緒） |
+| `./deploy/deploy.sh --environment=<環境>` | 部署（選設定檔 → 準備映像 → 建資料庫帳號 → 依 `APP_BASE_PATH` 產生前端 → 啟動 → 等 API 就緒） |
 | `./deploy/export-images.sh --environment=<環境>` | 開發機打包映像（linux/amd64），輸出到 `deploy/dist/` |
 | `./deploy/backup.sh` | 備份 `quote_platform` 與 MinIO 到 `backups/` |
 | `./deploy/restore.sh` | 還原備份（破壞性，需輸入 `yes`） |
@@ -51,6 +51,7 @@ Hyper-V 主機慣例是一個專案一個 `/srv/<專案名>`。程式碼與資�
 ├── app/                                   ← repo（部署與維運指令都在這裡執行）
 │   ├── docker-compose.yml  docker-compose.shared-db.yml
 │   ├── apps/api/QuotePlatform.Api/Migrations/   ← deploy.sh 用它比對 schema 版本，不能省
+│   ├── infra/nginx/*.conf.template        ← web、dev-proxy 容器掛載，不能省
 │   ├── deploy/
 │   │   ├── *.sh
 │   │   ├── config/ai-settings.json        ← api 容器掛載，不能省
@@ -79,6 +80,30 @@ Hyper-V 主機慣例是一個專案一個 `/srv/<專案名>`。程式碼與資�
 ```
 
 `export-images.sh` 的環境參數用來讀 `IMAGE_TAG`／`MINIO_TAG`，打包與目標機的值必須一致，否則 `deploy.sh` 會列出缺少的映像。
+
+映像包內容：`quote-platform-api`、`quote-platform-file-server`、`quote-platform-web-build`（前端建置工具：Node、相依套件與原始碼）、`nginx:1.27-alpine`、`minio/minio`、`alpine`。前端靜態檔不在映像裡：`deploy.sh` 每次部署在目標機用 web-build 依 `APP_BASE_PATH` 產生（約 1～2 分鐘，會用到 VM 的 CPU 與記憶體），所以同一份映像包可用在任何前綴的環境。
+
+## 掛在既有網域的子路徑下（IIS Application）
+
+demo 機對外是 `https://<網域>/quote-platform/app/`：Windows 主機的 IIS 在網站底下新增一個 Application，剝掉前綴後轉到 VM（`192.168.84.201:8096`）。
+
+```
+瀏覽器 ─https─▶ IIS Application「quote-platform/app」（deploy/iis/web.config，剝前綴）
+                  └─▶ http://192.168.84.201:8096/ ─▶ web（nginx）─┬─▶ api
+                                                                  └─▶ file-server
+```
+
+1. `deploy/.env.demo`：`APP_BASE_PATH=/quote-platform/app`、`REFRESH_COOKIE_SECURE=true`、`WEB_BIND=0.0.0.0`。
+2. 在 demo 機部署：`./deploy/deploy.sh --environment=demo`（前端依前綴建置，cookie Path 也帶前綴）。
+3. IIS：在網站上「新增應用程式」，別名 `quote-platform/app`，實體路徑指向空資料夾（例如 `C:\inetpub\quote-platform-app-proxy`），放入 `deploy/iis/web.config`。前置需求寫在該檔開頭（URL Rewrite、ARR 的 Enable proxy、允許的伺服器變數、WebSocket 功能；美達特已用過同一台 IIS，通常都已具備）。
+4. 驗證：先在 VM 上 `curl -I http://127.0.0.1:8096/login` 確認容器回 200，再從瀏覽器開 `https://<網域>/quote-platform/app/` 登入、換頁、開附件、進虛擬辦公室。也測一次沒有結尾斜線的 `/quote-platform/app`，應轉到帶斜線的網址。
+5. 真實 IP：照 `.env.demo` 的註解找出 IIS 主機的 IP，填進 `TRUSTED_PROXY_CIDR`（`<IP>/32`）後重新部署。
+
+注意：
+
+- `APP_BASE_PATH`、IIS 的別名、`web.config` 裡的路徑必須完全一致；改了任何一個都要一起改，並重新執行 `deploy.sh`（只重啟容器不會重新產生靜態檔）。
+- 設了前綴後直接開 `http://<VM IP>:8096/` 會缺樣式、無法登入，這是預期現象，只能經 IIS 存取。
+- 本機不用 IIS 也能驗證：在 `deploy/.env.development` 設 `APP_BASE_PATH=/quote-platform/app` 後部署，再 `./deploy/dc.sh --profile dev-proxy up -d dev-proxy`，開 `http://127.0.0.1:8097/quote-platform/app/`。dev-proxy 只模擬剝前綴，不需要時 `./deploy/dc.sh --profile dev-proxy stop dev-proxy`。
 
 ## 之後更新版本
 
@@ -164,6 +189,12 @@ proxy_set_header X-Forwarded-Proto $scheme;
 |---|---|
 | 容器啟動即 `exec format error` | 映像不是 amd64。回開發機重跑 `export-images.sh`（它會在打包前擋下） |
 | `export-images.sh` 拉不到 `minio/minio`（Docker Hub 說倉庫不存在、quay 回 401） | MinIO 官方已不再公開發布映像。需要一份 amd64 版：從已打包過它的映像包（例如美達特的 `metat-images-*.tar.gz`，內含 `minio/minio:latest`）只取出該映像，改標成 `minio/minio:${MINIO_TAG}` 載入本機。不要整包 `docker load`，會覆蓋本機同名標籤。載入後 `export-images.sh` 會自動採用，只需做一次。 |
+| 經 IIS 開啟頁面但樣式全裂、Console 一堆 404 | `APP_BASE_PATH` 與 IIS 別名不一致，或改了 `APP_BASE_PATH` 卻沒重新執行 `deploy.sh` |
+| 經 IIS 登入成功，但一陣子後（或換頁時）被登出 | `REFRESH_COOKIE_SECURE=true` 卻用 http 存取，或 `APP_BASE_PATH` 與實際路徑不一致，瀏覽器沒把 refresh cookie 送回來 |
+| IIS 回 502 | 先在 VM 上 `curl -I http://127.0.0.1:8096/login`；容器正常時，多半是 ARR 沒有勾 Enable proxy，或 VM 的 8096 連不到 |
+| AI 圖像識別在 IIS 下約 2 分鐘就失敗 | `web.config` 的 `proxy timeout` 沒生效（IIS 鎖住了 proxy 區段時要改在伺服器層級的 ARR 設定） |
+| 虛擬辦公室的上線狀態不會更新 | IIS 沒安裝 WebSocket 通訊協定功能 |
+| `docker compose build` 出現 `x-docker-expose-session-sharedkey contains value with non-printable ASCII characters` | repo 路徑含中文。部署腳本已改用 `docker buildx build`（`quote_build_images`），不要直接下 compose build |
 | `Access denied for user 'quote_app'` | 密碼與 `.env` 不一致，或還原後沒重新授權；重跑 `./deploy/ensure-shared-db.sh` |
 | 找不到 network `mariadb-network` | 共用 MariaDB 沒啟動，或 `SHARED_DB_NETWORK` 填錯（Mac 是 `shared-db`） |
 | API 一直沒就緒 | `./deploy/dc.sh logs --tail=100 api` |

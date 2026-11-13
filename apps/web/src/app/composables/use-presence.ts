@@ -18,6 +18,7 @@ import { getMeApi } from '@/shared/services/auth-service';
 import { getPresenceApi, officeConnection, RETRY_DELAYS, RETRY_FALLBACK_DELAY, type OfficeKnock, type PresenceEntry } from '@/shared/services/office-service';
 import type { Me } from '@/shared/types/auth';
 import { hasPermission } from '@/shared/types/permissions';
+import { withBasePath } from '@/shared/utils/base-path';
 
 const ACTIVITY_INTERVAL_MS = 60_000;
 
@@ -285,5 +286,5 @@ function showKnock(knock: OfficeKnock): void {
 
 function goToKnock(knock: OfficeKnock): void {
   if (knockHandler) knockHandler(knock);
-  else window.location.assign(`/office?dept=${encodeURIComponent(knock.departmentId)}&answer=${encodeURIComponent(knock.fromMembershipId)}`);
+  else window.location.assign(withBasePath(`/office?dept=${encodeURIComponent(knock.departmentId)}&answer=${encodeURIComponent(knock.fromMembershipId)}`));
 }

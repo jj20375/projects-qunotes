@@ -9,6 +9,7 @@ import { useQuery } from '@tanstack/vue-query';
 import QuotePreviewDrawer from '@/app/components/QuotePreviewDrawer.vue';
 import { getOrderApi } from '@/shared/services/document-service';
 import { formatMoney } from '@/shared/types/business';
+import { withBasePath } from '@/shared/utils/base-path';
 
 const props = defineProps<{ open: boolean; orderId?: string | null; currentProjectId?: string }>();
 const emit = defineEmits<{ close: [] }>();
@@ -70,7 +71,7 @@ const uninvoiced = computed(() => (o.value ? o.value.total - o.value.invoicedAmo
           <a-descriptions-item label="出貨單">{{ o.shipmentCount }} 張</a-descriptions-item>
           <a-descriptions-item label="保固單">{{ o.warrantyCount }} 張</a-descriptions-item>
         </a-descriptions>
-        <a-button v-if="!sameProject" type="link" :href="`/projects/detail?id=${o.project.id}`" target="_blank" class="link">開啟這個專案</a-button>
+        <a-button v-if="!sameProject" type="link" :href="withBasePath(`/projects/detail?id=${o.project.id}`)" target="_blank" class="link">開啟這個專案</a-button>
       </template>
       <a-empty v-else-if="!order.isFetching.value" description="找不到訂單" />
     </a-spin>

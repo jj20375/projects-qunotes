@@ -9,6 +9,7 @@ import { BellOutlined } from '@ant-design/icons-vue';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/vue-query';
 import { followUpDue } from '@/shared/services/followup-service';
 import { listNotificationsApi, markAllNotificationsReadApi, markNotificationReadApi, type NotificationItem } from '@/shared/services/notification-service';
+import { withBasePath } from '@/shared/utils/base-path';
 
 const queryClient = useQueryClient();
 const open = ref(false);
@@ -43,7 +44,7 @@ function statusText(item: NotificationItem) {
 
 function openItem(item: NotificationItem) {
   if (!item.readAt) markRead.mutate(item.id);
-  window.location.assign(`/projects/detail?id=${item.projectId}&tab=followups`);
+  window.location.assign(withBasePath(`/projects/detail?id=${item.projectId}&tab=followups`));
 }
 </script>
 

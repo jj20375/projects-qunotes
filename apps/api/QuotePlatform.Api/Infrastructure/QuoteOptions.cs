@@ -13,6 +13,22 @@ public sealed class QuoteOptions
     public int RefreshTokenDays { get; init; } = 14;
     /// <summary>Refresh token cookie 是否只走 HTTPS；本機 http 開發時設為 false。</summary>
     public bool RefreshCookieSecure { get; init; } = true;
+    /// <summary>
+    /// 對外網址的部署前綴（例如 <c>/quote-platform/app</c>），只有掛在其他網站的子路徑下時才設定；空字串代表掛在根目錄。
+    /// 前置代理（IIS）會先剝掉前綴再轉給 API，所以路由不受影響；只有寫給瀏覽器的 cookie Path 必須帶上前綴，
+    /// 否則瀏覽器不會把 refresh token 送回來。必須與前端建置時的 <c>QUOTE_BASE_PATH</c> 相同（deploy.sh 由同一個 <c>APP_BASE_PATH</c> 帶入）。
+    /// </summary>
+    public string PublicBasePath { get; init; } = string.Empty;
+
+    /// <summary>Refresh token cookie 的 Path：部署前綴加上 <c>/api/auth</c>，沒有前綴時為 <c>/api/auth</c>。</summary>
+    public string RefreshCookiePath
+    {
+        get
+        {
+            var basePath = PublicBasePath.Trim().Trim('/');
+            return basePath.Length == 0 ? "/api/auth" : $"/{basePath}/api/auth";
+        }
+    }
     /// <summary>登入是否要求圖形驗證碼；只有本機自動化測試可關閉。</summary>
     public bool LoginCaptchaEnabled { get; init; } = true;
     /// <summary>啟動時套用 migration。</summary>

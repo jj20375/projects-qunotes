@@ -62,3 +62,21 @@ quote_ensure_data_dirs() {
     return 1
   fi
 }
+
+# 建置三個應用映像（名稱需與 docker-compose.yml 的 image: 一致）。用法：quote_build_images <tag> [platform]
+# 不用 docker compose build：repo 路徑含中文時，compose 的 BuildKit session 會把路徑放進 HTTP 標頭，
+# 以「x-docker-expose-session-sharedkey contains value with non-printable ASCII characters」失敗。
+# --provenance=false／--sbom=false：預設附掛的 attestation 會讓 docker save 產出 manifest list，
+# 部分 docker load 的處理不一致；離線交付要最單純的單平台映像。
+quote_build_images() {
+  local tag="$1" platform="${2:-}" spec
+  local -a platform_args=()
+  [[ -n "$platform" ]] && platform_args=(--platform "$platform")
+  for spec in "apps/api/QuotePlatform.Api/Dockerfile:quote-platform-api" \
+              "file-server/Dockerfile:quote-platform-file-server" \
+              "apps/web/Dockerfile:quote-platform-web-build"; do
+    # macOS 內建 bash 3.2 在 set -u 下展開空陣列會報 unbound variable，所以用 ${arr[@]+...} 的寫法。
+    DOCKER_BUILDKIT=1 docker buildx build ${platform_args[@]+"${platform_args[@]}"} \
+      --provenance=false --sbom=false --load -f "${spec%%:*}" -t "${spec##*:}:${tag}" . || return 1
+  done
+}

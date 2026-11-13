@@ -23,6 +23,7 @@ import { followUpDue } from '@/shared/services/followup-service';
 import AttachmentList from '@/app/components/AttachmentList.vue';
 import { useMe } from '@/app/composables/use-me';
 import { DATA_SCOPE_LABELS } from '@/shared/types/permissions';
+import { withBasePath } from '@/shared/utils/base-path';
 
 const projectId = new URLSearchParams(window.location.search).get('id') ?? '';
 // 總表的連結會帶 tab=followups，直接開到跟進紀錄頁籤。
@@ -86,7 +87,7 @@ function confirmDelete() {
     onOk: async () => {
       try {
         await deleteProjectApi(projectId);
-        window.location.assign('/projects');
+        window.location.assign(withBasePath('/projects'));
       } catch (error) {
         message.error((error as Error).message);
       }
@@ -104,7 +105,7 @@ const roleLabel = computed(() => {
 
 <template>
   <a-result v-if="notFound" status="404" title="找不到專案" sub-title="專案不存在，或不在您的資料範圍內。">
-    <template #extra><a-button type="primary" href="/projects">回專案列表</a-button></template>
+    <template #extra><a-button type="primary" :href="withBasePath('/projects')">回專案列表</a-button></template>
   </a-result>
   <a-skeleton v-else-if="!p" active />
   <a-space v-else direction="vertical" :size="16" style="width: 100%">

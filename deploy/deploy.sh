@@ -122,6 +122,13 @@ if [[ -n "$trusted_proxy" && "$trusted_proxy" != "127.0.0.1/32" && "${web_bind_v
   echo "       有前置代理時請把 WEB_BIND 設為 127.0.0.1。" >&2
 fi
 
+# 前綴同時寫進前端靜態檔與 refresh cookie 的 Path；格式不對時要到使用者登入後一換頁就被登出才會發現。
+app_base_path="$(quote_env_value APP_BASE_PATH "$env_path")"
+if [[ -n "$app_base_path" && ! "$app_base_path" =~ ^(/[A-Za-z0-9._~-]+)+$ ]]; then
+  echo "[錯誤] APP_BASE_PATH 必須留空，或是以 / 開頭、不含結尾斜線的路徑（例如 /quote-platform/app），目前是：${app_base_path}" >&2
+  exit 1
+fi
+
 deploy_mode="${mode_override:-$(quote_env_value DEPLOY_MODE "$env_path")}"
 deploy_mode="${deploy_mode:-build}"
 case "$deploy_mode" in
@@ -150,7 +157,7 @@ if [[ "$deploy_mode" == "offline" ]]; then
   # 名稱必須與 docker-compose.yml 的 image: 一致，否則 compose 會判定映像不存在而嘗試建置。
   image_error=0
   for image in "quote-platform-api:${image_tag}" "quote-platform-file-server:${image_tag}" \
-               "quote-platform-web:${image_tag}" "minio/minio:${minio_tag}" "alpine:latest"; do
+               "quote-platform-web-build:${image_tag}" "nginx:1.27-alpine" "minio/minio:${minio_tag}" "alpine:latest"; do
     arch="$(docker image inspect --format '{{.Architecture}}' "$image" 2>/dev/null || true)"
     if [[ -z "$arch" ]]; then
       echo "  [X] 缺少映像：${image}" >&2
@@ -165,7 +172,7 @@ if [[ "$deploy_mode" == "offline" ]]; then
   fi
 else
   echo "[INFO] 建置映像…"
-  dc build
+  quote_build_images "$image_tag"
 fi
 
 # ── 共用 MariaDB 與資料目錄 ──────────────────────────────────
@@ -234,6 +241,13 @@ if [[ "$bootstrap" == true ]]; then
   echo "[INFO] 本次啟動執行 Seeder。"
 fi
 
+# 靜態檔在目標機依 APP_BASE_PATH 產生：前綴不寫死在映像裡，改前綴只要改 .env 重新部署。
+echo "[INFO] 產生前端靜態檔（前綴：${app_base_path:-無}，需要幾分鐘）…"
+if ! dc --profile tools run --rm web-build; then
+  echo "[錯誤] 前端建置失敗，web 仍保留上一版的靜態檔。請看上面的建置輸出。" >&2
+  exit 1
+fi
+
 # build 模式上面已經建置過，這裡兩種模式都不再建置。
 dc up -d --no-build --remove-orphans
 
@@ -271,7 +285,13 @@ web_bind="$(quote_env_value WEB_BIND "$env_path")"; web_bind="${web_bind:-127.0.
 web_port="$(quote_env_value WEB_PORT "$env_path")"; web_port="${web_port:-8096}"
 echo ""
 echo "==== 部署完成（${environment:-既有 .env}／${deploy_mode}）===="
-echo "後台入口：http://${web_bind}:${web_port}/"
+if [[ -n "$app_base_path" ]]; then
+  echo "後台入口：https://<前置代理的網域>${app_base_path}/（經 IIS 等前置代理剝除前綴後轉到 ${web_bind}:${web_port}）"
+  echo "  直接開 http://${web_bind}:${web_port}/ 會缺樣式、無法登入，屬預期現象；本機驗證可啟動 dev-proxy："
+  echo "  ./deploy/dc.sh --profile dev-proxy up -d dev-proxy，再開 http://127.0.0.1:8097${app_base_path}/"
+else
+  echo "後台入口：http://${web_bind}:${web_port}/"
+fi
 echo "維運指令：./deploy/dc.sh ps | logs -f api | up -d api"
 if [[ -n "$trusted_proxy" && "$trusted_proxy" != "127.0.0.1/32" ]]; then
   gateway="$(docker network inspect quote-platform_default --format '{{range .IPAM.Config}}{{.Gateway}} {{end}}' 2>/dev/null || true)"

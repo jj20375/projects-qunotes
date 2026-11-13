@@ -13,6 +13,7 @@ import ClientFormModal from './ClientFormModal.vue';
 import ClientImportModal from './ClientImportModal.vue';
 import { message } from 'ant-design-vue';
 import { downloadFile } from '@/shared/utils/download';
+import { withBasePath } from '@/shared/utils/base-path';
 
 const { can, canOption } = useMe();
 const importOpen = ref(false);
@@ -100,7 +101,7 @@ const columns = [
           <a-tag :color="record.status === 'active' ? 'green' : 'default'">{{ record.status === 'active' ? '往來中' : '停用' }}</a-tag>
         </template>
         <template v-else-if="columnId === 'projectCount'">
-          <a v-if="record.projectCount" :href="`/projects?clientId=${record.id}`">{{ record.projectCount }}</a>
+          <a v-if="record.projectCount" :href="withBasePath(`/projects?clientId=${record.id}`)">{{ record.projectCount }}</a>
           <span v-else class="muted">0</span>
         </template>
       </template>

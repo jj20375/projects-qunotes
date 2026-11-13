@@ -25,6 +25,7 @@ import { dataColumns } from '@/shared/table/data-table';
 import { formatMoney } from '@/shared/types/business';
 import { downloadFile } from '@/shared/utils/download';
 import MappingProfileDrawer from './MappingProfileDrawer.vue';
+import { withBasePath } from '@/shared/utils/base-path';
 
 const props = defineProps<{ open: boolean; projectId?: string; projectLabel?: string }>();
 const emit = defineEmits<{ close: [] }>();
@@ -133,7 +134,7 @@ async function confirm() {
       })),
     });
     message.success(`已建立報價單 ${created.quoteNo}`);
-    window.location.assign(`/quotes/edit?id=${created.id}`);
+    window.location.assign(withBasePath(`/quotes/edit?id=${created.id}`));
   } catch (error) {
     message.error((error as Error).message);
   } finally {
