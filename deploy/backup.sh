@@ -40,9 +40,15 @@ timestamp="$(date +%Y-%m-%d-%H-%M-%S)"
 # ── MariaDB ─────────────────────────────────────────────────
 mariadb_dir="${backup_root}/mariadb"
 mkdir -p "$mariadb_dir"
-databases="$(quote_db_exec "$mariadb_container" "$db_root_password" mariadb -uroot -N -e "SHOW DATABASES LIKE 'quote\\_%';" || true)"
+# 登入失敗與「沒有資料庫」要分開處理，而且都必須讓腳本失敗：
+# 排程備份若在密碼失效後仍回報成功，會一直沒有備份卻沒人發現。
+if ! databases="$(quote_db_exec "$mariadb_container" "$db_root_password" mariadb -uroot -N -e "SHOW DATABASES LIKE 'quote\\_%';")"; then
+  echo "[錯誤] 無法以 root 登入容器 ${mariadb_container}，請確認 ${env_path} 的 DB_ROOT_PASSWORD。" >&2
+  exit 1
+fi
 if [[ -z "$databases" ]]; then
-  echo "[警告] 找不到任何 quote_% 資料庫（或 root 密碼錯誤），略過 MariaDB 備份。" >&2
+  echo "[錯誤] 容器 ${mariadb_container} 裡沒有任何 quote_% 資料庫，沒有東西可備份。" >&2
+  exit 1
 else
   while IFS= read -r db; do
     [[ -z "$db" ]] && continue
