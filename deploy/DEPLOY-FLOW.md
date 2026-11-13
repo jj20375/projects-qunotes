@@ -42,6 +42,31 @@
 
 > 設定只改 `deploy/.env.<環境>`。`deploy/.env` 每次部署都會被覆寫。密碼與金鑰不要含 `; $ ' "`，建議用 `openssl rand -hex 24` 產生。
 
+## demo／正式機的目錄配置
+
+Hyper-V 主機慣例是一個專案一個 `/srv/<專案名>`。程式碼與資料分開放，更新程式時整個換掉 `app/` 也不會動到資料：
+
+```
+/srv/quote-platform/
+├── app/                                   ← repo（部署與維運指令都在這裡執行）
+│   ├── docker-compose.yml  docker-compose.shared-db.yml
+│   ├── apps/api/QuotePlatform.Api/Migrations/   ← deploy.sh 用它比對 schema 版本，不能省
+│   ├── deploy/
+│   │   ├── *.sh
+│   │   ├── config/ai-settings.json        ← api 容器掛載，不能省
+│   │   ├── .env.demo                      ← 你填的設定
+│   │   ├── .env                           ← deploy.sh 每次覆寫產生
+│   │   └── dist/quote-platform-images-*.tar.gz
+│   └── backups/                           ← 備份輸出
+└── data/                                  ← DATA_ROOT
+    └── quote/minio/                       ← 附件與公司 Logo
+```
+
+- `DATA_ROOT=/srv/quote-platform/data`（範本已填），目錄要事先建立：`sudo mkdir -p /srv/quote-platform/{app,data} && sudo chown -R "$USER" /srv/quote-platform`。
+- compose 專案名稱固定為 `quote-platform`，所以 repo 資料夾取名 `app` 不影響 volume、網路與映像名稱。
+- MariaDB 資料在共用 `mariadb` 容器自己的 volume，不在這個目錄。
+- `demo`／`production` 不需要 `tests/`、`kenney-downloads/`、`.claude/`；用 `git archive --format=tar.gz -o quote-platform-src.tar.gz HEAD` 可以只打包已 commit 的檔案。
+
 ## demo／正式機（離線映像）
 
 ```bash
@@ -127,7 +152,7 @@ proxy_set_header X-Forwarded-Proto $scheme;
 
 ## 維運注意事項
 
-- **定期備份**：腳本不會自己排程。demo／正式機用 crontab，例如每天 02:00：`0 2 * * * cd /opt/quote-platform && ./deploy/backup.sh >> backups/backup.log 2>&1`。備份與資料在同一台機器，主機壞掉會一起消失，要定期把 `backups/` 複製到別台。
+- **定期備份**：腳本不會自己排程。demo／正式機用 crontab，例如每天 02:00：`0 2 * * * cd /srv/quote-platform/app && ./deploy/backup.sh >> backups/backup.log 2>&1`。備份與資料在同一台機器，主機壞掉會一起消失，要定期把 `backups/` 複製到別台。
 - **防火牆**：Docker 發布的 port 不受 ufw 規則限制。demo 機 `WEB_BIND=0.0.0.0` 時，能連到這台 VM 的人都能開後台；正式機請維持 `127.0.0.1`。
 - **版本回滾**：`IMAGE_TAG=latest` 時，載入新版會覆蓋舊映像，無法切回。需要回滾能力時，每次發版把 `IMAGE_TAG` 改成日期（例如 `2026-11-12`），開發機與目標機的設定檔要一致；回滾時改回舊標籤再部署即可（schema 已升級的版本不能回滾）。
 - **磁碟**：`deploy/dist/` 的舊 tar 與 `docker image prune` 可清掉的舊映像要定期清理。容器日誌已設定輪替（每個服務最多 5 × 10MB）。
