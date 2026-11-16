@@ -267,6 +267,15 @@ if ! wait_for_api; then
   exit 1
 fi
 
+# file-server 以 node 身分執行，上傳暫存檔寫在 FILE_ROOT/tmp。volume 若是舊版映像以 root 建立的，
+# 寫不進去時使用者只會看到上傳 500「檔案服務發生錯誤」，健康檢查也照樣通過，所以部署時直接驗證。
+if ! dc exec -T file-server sh -c 'mkdir -p "${FILE_ROOT:-/data}/tmp" && test -w "${FILE_ROOT:-/data}/tmp"' >/dev/null 2>&1; then
+  echo "[錯誤] file-server 無法寫入暫存目錄，上傳會失敗。暫存 volume 可能是舊版映像以 root 建立的，重建即可（只放上傳中的暫存檔）：" >&2
+  echo "       ./deploy/dc.sh rm -sf file-server && docker volume rm quote-platform_file-tmp" >&2
+  echo "       然後重新執行這個部署指令。" >&2
+  exit 1
+fi
+
 # opt-in 旗標只該生效一次：容器是帶著旗標建立的，不重建的話之後 docker restart 會再跑一次。
 if [[ "$migrate" == true || "$bootstrap" == true ]]; then
   unset MIGRATE_ON_START BOOTSTRAP_ON_START

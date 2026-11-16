@@ -189,6 +189,7 @@ proxy_set_header X-Forwarded-Proto $scheme;
 |---|---|
 | 容器啟動即 `exec format error` | 映像不是 amd64。回開發機重跑 `export-images.sh`（它會在打包前擋下） |
 | `export-images.sh` 拉不到 `minio/minio`（Docker Hub 說倉庫不存在、quay 回 401） | MinIO 官方已不再公開發布映像。需要一份 amd64 版：從已打包過它的映像包（例如美達特的 `metat-images-*.tar.gz`，內含 `minio/minio:latest`）只取出該映像，改標成 `minio/minio:${MINIO_TAG}` 載入本機。不要整包 `docker load`，會覆蓋本機同名標籤。載入後 `export-images.sh` 會自動採用，只需做一次。 |
+| 上傳附件或 Logo 回 500，訊息「檔案服務發生錯誤。」 | file-server 以 `node` 身分執行，暫存 volume 若由舊版映像以 root 建立就寫不進去。用新版映像重新部署通常會自動修正；`deploy.sh` 仍擋下時照它的提示刪除 `quote-platform_file-tmp` 後重跑 |
 | 經 IIS 開啟頁面但樣式全裂、Console 一堆 404 | `APP_BASE_PATH` 與 IIS 別名不一致，或改了 `APP_BASE_PATH` 卻沒重新執行 `deploy.sh` |
 | 經 IIS 登入成功，但一陣子後（或換頁時）被登出 | `REFRESH_COOKIE_SECURE=true` 卻用 http 存取，或 `APP_BASE_PATH` 與實際路徑不一致，瀏覽器沒把 refresh cookie 送回來 |
 | IIS 回 502 | 先在 VM 上 `curl -I http://127.0.0.1:8096/login`；容器正常時，多半是 ARR 沒有勾 Enable proxy，或 VM 的 8096 連不到 |
